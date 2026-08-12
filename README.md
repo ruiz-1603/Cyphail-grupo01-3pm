@@ -1,5 +1,5 @@
 # EIF400-II-2026
-# Grupo01-3pm
+# Grupo 01-3pm
 **Professor**: Carlos Loria
 
 # Team Members
