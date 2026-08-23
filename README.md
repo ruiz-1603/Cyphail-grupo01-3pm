@@ -212,7 +212,8 @@ This project was developed with assistance from:
 
 **Code Authorship:** All code in this repository was written by the team members with AI assistance for learning purposes only. No automatic code-generation tools were used to produce the entire application.
 
-Prompts used and model information can be provided upon request during project defense.
+Prompts used:
+"Guiame por medio de explicaciones detalladas (no me des el codigo directamente) para paso a paso implementar lo necesario para el .use con los grafos fake propuestos."
 
 ---
 
