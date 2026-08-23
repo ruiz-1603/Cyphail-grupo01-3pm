@@ -9,5 +9,5 @@
 - Daniel Villarroel Abaduca
 - Nicolás Zárate Hernández
 
-**Comandos utilizados para ayuda por medio de la IA: **
+**Comandos utilizados para ayuda por medio de la IA:**
 "Guiame por medio de explicaciones detalladas (no me des el codigo directamente) para paso a paso implementar lo necesario para la implementacion del comando .use para poder mostrar al usuario la simulacion de la interaccion con los grafos."
