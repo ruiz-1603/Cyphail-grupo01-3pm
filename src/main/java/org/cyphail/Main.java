@@ -16,7 +16,7 @@ import picocli.CommandLine;
  */
 
 public class Main {
-    static void main(String[] args) {
+    public static void main(String[] args) {
         //  IO.println("Cyphail");
         int exitCode = new CommandLine(new CyphailCommand()).execute(args);
         System.exit(exitCode);

@@ -9,10 +9,10 @@ import picocli.CommandLine.Command;
         description = "Starts the Cyphail interactive REPL")
 
 public class ReplCommand implements Runnable {
+    private static final FakePrologEngine ENGINE = new FakePrologEngine();
+
     @Override
     public void run() {
-        FakePrologEngine engine = new FakePrologEngine();
-        Repl repl = new Repl(engine);
-        repl.start();
+        new Repl(ENGINE).start();
     }
 }

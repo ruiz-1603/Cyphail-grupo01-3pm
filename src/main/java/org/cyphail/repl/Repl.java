@@ -8,10 +8,11 @@ import org.cyphail.util.IO;
 import java.util.Scanner;
 
 public class Repl {
-    private final FakePrologEngine engine;
+    private final Engine engine;
      private boolean running;
 
-    public Repl(FakePrologEngine engine) {
+
+    public Repl(Engine engine) {
         this.engine = engine;
         this.running = true;
     }
@@ -22,33 +23,33 @@ public class Repl {
     }
 
     private void welcomeMessage() {
-        IO.println("------------------------------");
-        IO.println("            CYPHAIL");
-        IO.println("------------------------------");
-        IO.println("Type 'exit' to quit.");
-        IO.println("\n");
+        IO.println("────────────────────────────────────────");
+        IO.println("  Cyphail-01-3pm  v0.1");
+        IO.println("  ESCINF / UNA · EIF400-II-2026");
+        IO.println("  Visit www.whatiscyphail.com for more information");
+        IO.println("────────────────────────────────────────");
+        IO.println("  Welcome to Cyphail!");
+        IO.println("────────────────────────────────────────");
+        IO.println("  Type '.help' for help or 'exit' to quit.\n");
+
     }
 
     private void replLoop() {
         Scanner scanner = new Scanner(System.in);
-        while (true) {
+        while (running) {
 
             IO.print("cyphail> ");
             String command = scanner.nextLine().trim();
+
+            if (command.isBlank()) {
+                continue;
+            }
 
             if (command.startsWith(".")) {
                 handleCommand(command);
             } else {
                 handleQuery(command);
             }
-
-            if (command.isBlank()) {
-                continue;
-            }
-
-            String result = engine.execute(command);
-
-            IO.println(result);
         }
     }
 
@@ -57,10 +58,11 @@ public class Repl {
         String cmd = parts[0].toLowerCase();
 
         switch (cmd) {
-            case ".exit":{
-                 IO.println("Bye!");
-                running = false;  }              
+            case ".exit": {
+                IO.println("Thanks for using Cyphail!");
+                running = false;
                 break;
+            }
             case ".help":
                 help();
                 break;
@@ -78,13 +80,14 @@ public class Repl {
 
     private void handleUseCommand(String[] parts) {
         if (parts.length == 1) {
-            printAvailableGraphs(); // Mostrar grafos disponibles
+            printAvailableGraphs();
         } else {
             String graphName = parts[1].toLowerCase();
             if (FakeGraphData.graphExists(graphName)) {
                 engine.setCurrentGraph(graphName);
                 long time = (long) (Math.random() * 5) + 1;
                 IO.println("OK. \"" + graphName + "\" graph available after " + time + "ms");
+                IO.println();
             } else {
                 IO.println("ERROR: Graph '" + graphName + "' not found.");
             }
@@ -138,9 +141,8 @@ public class Repl {
     }
     private void about() {
         IO.println("Project: Cyphail - Graph Query Prototype");
-        IO.println("Course: EIF400-II-2026 - Paradigmas de Programación");
-        IO.println("University: Universidad Nacional de Costa Rica");
-        IO.println("School: Escuela de Informática");
+        IO.println("Course: EIF400-II-2026 ");
+        IO.println("School: Universidad Nacional de Costa Rica");
         IO.println("Professor: Carlos Loría-Sáenz");
         IO.println("\n");
         IO.println("Team Members (Grupo 01-3pm):");
