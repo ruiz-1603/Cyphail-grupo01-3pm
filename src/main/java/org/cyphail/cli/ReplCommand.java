@@ -11,7 +11,7 @@ import picocli.CommandLine.Command;
 public class ReplCommand implements Runnable {
     @Override
     public void run() {
-        Engine engine = new FakePrologEngine();
+        FakePrologEngine engine = new FakePrologEngine();
         Repl repl = new Repl(engine);
         repl.start();
     }

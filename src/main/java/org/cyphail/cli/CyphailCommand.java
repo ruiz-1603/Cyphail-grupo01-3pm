@@ -1,5 +1,6 @@
 package org.cyphail.cli;
 
+import org.cyphail.util.IO;
 import picocli.CommandLine.Command;
 
 @Command(name = "cyphail",
