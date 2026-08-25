@@ -83,7 +83,7 @@ This will:
 Start the interactive REPL:
 
 ```bash
-java -jar target/cyphail-1.0-SNAPSHOT.jar repl
+cyphail repl
 ```
 
 
@@ -225,6 +225,6 @@ This is an academic project for educational purposes within the **Universidad Na
 
 ##  Last Updated
 
-August 22, 2026
+August 24, 2026
 
 </div>
