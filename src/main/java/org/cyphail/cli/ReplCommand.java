@@ -4,6 +4,18 @@ import org.cyphail.engine.FakePrologEngine;
 import org.cyphail.repl.Repl;
 import picocli.CommandLine.Command;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 @Command(name = "repl",
         description = "Starts the Cyphail interactive REPL")
 

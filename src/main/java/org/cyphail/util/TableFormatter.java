@@ -2,6 +2,18 @@ package org.cyphail.util;
 
 import java.util.Arrays;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 public class TableFormatter {
 
     public static String formatTable(String[][] data) {
@@ -9,7 +21,7 @@ public class TableFormatter {
             return "";
         }
 
-        // Calcular ancho de cada columna
+        // Calculate column widths based on content
         int cols = data[0].length;
         int[] colWidths = new int[cols];
 
@@ -19,7 +31,7 @@ public class TableFormatter {
             }
         }
 
-        // Construir tabla
+        // Build formatted table
         StringBuilder sb = new StringBuilder();
         boolean isHeader = true;
 
@@ -33,7 +45,7 @@ public class TableFormatter {
             }
             sb.append("\n");
 
-            // Línea separadora después del header
+            // Add separator line after header
             if (isHeader) {
                 for (int i = 0; i < cols; i++) {
                     sb.append("-".repeat(colWidths[i]));
