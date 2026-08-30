@@ -1,7 +1,6 @@
 package org.cyphail.repl;
 
 import org.cyphail.engine.Engine;
-import org.cyphail.engine.FakePrologEngine;
 import org.cyphail.data.FakeGraphData;
 import org.cyphail.util.IO;
 
