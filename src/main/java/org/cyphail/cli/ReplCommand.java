@@ -1,6 +1,5 @@
 package org.cyphail.cli;
 
-import org.cyphail.engine.Engine;
 import org.cyphail.engine.FakePrologEngine;
 import org.cyphail.repl.Repl;
 import picocli.CommandLine.Command;
