@@ -2,9 +2,22 @@ package org.cyphail.data;
 
 import java.util.*;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 public class FakeGraphData {
     private static final Map<String, GraphInfo> GRAPHS = new LinkedHashMap<>();
 
+     // Initialize four demo graphs with nodes and relationships
     static {
         GRAPHS.put("amigos", new GraphInfo(
             "Social Network",
@@ -88,6 +101,8 @@ public class FakeGraphData {
         return GRAPHS.containsKey(name);
     }
 
+
+    // Data class representing a graph with nodes and relationships.
     public static class GraphInfo {
         public String description;
         public String[][] nodes;

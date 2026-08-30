@@ -3,6 +3,18 @@ package org.cyphail.engine;
 import org.cyphail.data.FakeGraphData;
 import org.cyphail.util.TableFormatter;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 public class FakePrologEngine implements Engine {
     private String currentGraph = null;
 
@@ -25,18 +37,19 @@ public class FakePrologEngine implements Engine {
         FakeGraphData.GraphInfo graphInfo = FakeGraphData.getGraph(currentGraph);
         String upperCommand = command.toUpperCase().trim();
 
-        // Detectar tipo de query
+        // Validate query structure
         if (upperCommand.startsWith("MATCH") && upperCommand.contains("RETURN")) {
             long startTime = System.currentTimeMillis();
 
+            //  Determine query type based on relationship keywords
             if (upperCommand.contains("AMIGO_DE") || upperCommand.contains("RIVAL") || 
                 upperCommand.contains("REQUIRES")) {
-                // Query con relaciones
+                // Relationship query: return edges (aristas del grafo)
                 String table = TableFormatter.formatTable(graphInfo.edges);
                 long elapsed = System.currentTimeMillis() - startTime;
                 return table + "\nOK. Query resolved after " + elapsed + " ms.\n";
             } else {
-                // Query de nodos
+                // Node query: return vertices (vértices del grafo)
                 String table = TableFormatter.formatTable(graphInfo.nodes);
                 long elapsed = System.currentTimeMillis() - startTime;
                 return table + "\nOK. Query resolved after " + elapsed + " ms.\n";

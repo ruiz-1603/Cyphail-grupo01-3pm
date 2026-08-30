@@ -6,6 +6,18 @@ import org.cyphail.util.IO;
 
 import java.util.Scanner;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 public class Repl {
     private final Engine engine;
      private boolean running;
@@ -52,6 +64,8 @@ public class Repl {
         }
     }
 
+    // Process REPL commands (start with dot).
+    // Dispatches to appropriate handler based on command name.
     private void handleCommand(String command) {
         String[] parts = command.split("\\s+", 2);
         String cmd = parts[0].toLowerCase();
@@ -77,6 +91,11 @@ public class Repl {
         }
     }
 
+    /*
+     * Handle .use command: list graphs or connect to one.
+     * If no argument: print available graphs.
+     * If argument: activate that graph.
+     */
     private void handleUseCommand(String[] parts) {
         if (parts.length == 1) {
             printAvailableGraphs();
@@ -93,7 +112,7 @@ public class Repl {
         }
     }
 
-    // Simulación de la lista de grafos disponibles
+    // Print available graphs in table format.
     private void printAvailableGraphs() {
         IO.println();
         String[][] graphs = new String[][] {
@@ -104,7 +123,7 @@ public class Repl {
             {"planets", "Planets in Solar System"}
         };
 
-        // Imprimir tabla manualmente
+        // Print the table
         IO.println(String.format("%-15s %s", graphs[0][0], graphs[0][1]));
         IO.println("-".repeat(45));
         for (int i = 1; i < graphs.length; i++) {
@@ -114,6 +133,9 @@ public class Repl {
         IO.println("OK. Query available after 5 ms.");
     }
 
+
+    // Execute a Cyphail query on the current graph.
+    // Requires a graph to be selected via .use command.
     private void handleQuery(String query) {
         if (engine.getCurrentGraph() == null) {
             IO.println("ERROR: No graph selected. Use .use <graph_name> first.");

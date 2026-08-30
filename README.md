@@ -225,6 +225,6 @@ This is an academic project for educational purposes within the **Universidad Na
 
 ##  Last Updated
 
-August 24, 2026
+August 30, 2026
 
 </div>

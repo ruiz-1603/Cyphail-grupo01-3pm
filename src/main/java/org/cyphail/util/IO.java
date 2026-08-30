@@ -2,6 +2,18 @@ package org.cyphail.util;
 
 import java.util.Scanner;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 public class IO {
     private static final Scanner SCANNER = new Scanner(System.in);
 
