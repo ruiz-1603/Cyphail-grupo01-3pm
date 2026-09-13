@@ -213,9 +213,10 @@ This project was developed with assistance from:
 **Code Authorship:** All code in this repository was written by the team members with AI assistance for learning purposes only. No automatic code-generation tools were used to produce the entire application.
 
 Prompts used:
-"Guiame por medio de explicaciones detalladas (no me des el codigo directamente) para paso a paso implementar lo necesario para el .use con los grafos fake propuestos."
+"Guiame por medio de explicaciones detalladas (no me des el codigo directamente) para paso a paso implementar lo necesario para el .use con los grafos fake propuestos.
+"Actúa como un profesor y tutor experto en Programación Funcional en Java. El objetivo de este sprint es construir a mano un Parser para analizar queries.
+También debo generar una estructura de AST que soporte la vista `.tree` en el REPL, validar variables no declaradas y cargar respuestas simuladas desde archivos JSON mediante Gson. NO me entregues el proyecto resuelto ni clases completas sin explicar. Guiamede forma incremental paso a paso explicando detalladamente"
 
----
 
 ##  License
 
