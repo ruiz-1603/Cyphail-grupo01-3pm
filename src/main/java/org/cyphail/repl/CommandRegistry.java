@@ -17,7 +17,7 @@ import java.util.Map;
  * - Samael Sanchez Mora
  * - Daniel Villarroel Abaduca
  * - Nicolás Zárate Hernández
-
+ *
 final client from command pattern, defines the types of commands
  and connect them to its receiver using lambdas
  *
