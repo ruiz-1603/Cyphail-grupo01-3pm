@@ -43,7 +43,7 @@ public class FakePrologEngine implements Engine {
 
             //  Determine query type based on relationship keywords
             if (upperCommand.contains("AMIGO_DE") || upperCommand.contains("RIVAL") || 
-                upperCommand.contains("REQUIRES")) {
+                upperCommand.contains("REQUIRES") || upperCommand.contains("ORBITA")) {
                 // Relationship query: return edges (aristas del grafo)
                 String table = TableFormatter.formatTable(graphInfo.edges);
                 long elapsed = System.currentTimeMillis() - startTime;
