@@ -4,78 +4,93 @@ import org.cyphail.parser.core.Fail;
 import org.cyphail.parser.core.Ok;
 import org.cyphail.parser.core.Parser;
 import org.cyphail.parser.core.Result;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Optional;
 import java.util.function.Function;
 
 public final class Parsers {
 
-    private Parsers() {
-		
-    }
+    private Parsers() {}
 
-    public static <I, A, B, R> Parser<I, B, R> sequence(Parser<I, A, R> first, Parser<I, B, R> second){ return input -> {
+    @SafeVarargs
+    public static <I, T, R> Parser<I, List<T>, R> Sequence(Parser<I, T, R>... parsers) {
+        return input -> {
+            List<T> results = new ArrayList<>();
+            I source = input;
 
-            Result<I, A, R> firstResult = first.parse(input);
-
-            if (firstResult instanceof Fail<I, A, R> fail) {
-                return Result.fail(fail.reason());
+            for (var p : parsers) {
+                switch (p.parse(source)) {
+                    case Fail<I, T, R>(R reason) -> {
+                        return Result.fail(reason);
+                    }
+                    case Ok<I, T, R>(T token, I rest) -> {
+                        results.add(token);
+                        source = rest;
+                    }
+                }
             }
 
-            Ok<I, A, R> firstOk = (Ok<I, A, R>) firstResult;
-
-            Result<I, B, R> secondResult = second.parse(firstOk.rest());
-
-            if (secondResult instanceof Fail<I, B, R> fail) {
-                return Result.fail(fail.reason());
-            }
-
-            Ok<I, B, R> secondOk = (Ok<I, B, R>) secondResult;
-
-            return Result.ok(secondOk.token(), secondOk.rest());
-		};
+            return Result.ok(results, source);
+        };
     }
-	
-	
-	public static <I, T, R> Parser<I, T, R> choice( Parser<I, T, R> first, Parser<I, T, R> second) { return input -> {
-        
-		Result<I, T, R> firstResult = first.parse(input);
 
-        if (firstResult instanceof Ok<I, T, R>) {
-            return firstResult;
-        }
+    public static <I, T, R> Parser<I, T, R> Or(Parser<I, T, R> first, Parser<I, T, R> second) {
+        return input -> switch (first.parse(input)) {
+            case Ok<I, T, R> ok -> ok;
+            case Fail<I, T, R> _ -> second.parse(input);
+        };
+    }
 
-        return second.parse(input);
-		};
-	}
-	
-	public static <I, A, B, R> Parser <I, B, R> map(Parser<I, A, R> parser, Function<A, B> mapper) { return input -> {
+    public static <I, T, R> Parser<I, Optional<T>, R> Opt(Parser<I, T, R> parser) {
+        return input -> switch (parser.parse(input)) {
+            case Ok<I, T, R>(T token, I rest) -> Result.ok(Optional.of(token), rest);
+            case Fail<I, T, R> _ -> Result.ok(Optional.empty(), input);
+        };
+    }
 
-        Result<I, A, R> result = parser.parse(input);
+    public static <I, T, R> Parser<I, List<T>, R> Star(Parser<I, T, R> parser) {
+        return input -> {
+            List<T> results = new ArrayList<>();
+            I source = input;
 
-        if (result instanceof Fail<I, A, R> fail) {
-            return Result.fail(fail.reason());
-        }
+            while (true) {
+                switch (parser.parse(source)) {
+                    case Fail<I, T, R> _ -> {
+                        return Result.ok(results, source);
+                    }
+                    case Ok<I, T, R>(T token, I rest) -> {
+                        results.add(token);
+                        source = rest;
+                    }
+                }
+            }
+        };
+    }
 
-        Ok<I, A, R> ok = (Ok<I, A, R>) result;
+    public static <I, T, R> Parser<I, List<T>, R> Plus(Parser<I, T, R> parser) {
+        Parser<I, List<T>, R> star = Star(parser);
 
-        return Result.ok(
-                mapper.apply(ok.token()),
-                ok.rest()
-			);
-		};
-	}
-		
-	public static Parser<String, String, String> literal(String expected) { return input -> {
+        return input -> switch (parser.parse(input)) {
+            case Fail<I, T, R>(R reason) -> Result.fail(reason);
+            case Ok<I, T, R>(T first, I rest) -> switch (star.parse(rest)) {
+                case Fail<I, List<T>, R>(R reason) -> Result.fail(reason);
+                case Ok<I, List<T>, R>(List<T> others, I end) -> {
+                    List<T> all = new ArrayList<>();
+                    all.add(first);
+                    all.addAll(others);
+                    yield Result.ok(all, end);
+                }
+            };
+        };
+    }
 
-        if (input.startsWith(expected)) {
-            return Result.ok(expected, input.substring(expected.length()));
-        }
 
-        return Result.fail( "Expected '" + expected + "'");
-		
-		};
-	}
-	
-	
-	
-		
+
+    public static <I, A, B, R> Parser<I, B, R> Map(Parser<I, A, R> parser, Function<A, B> mapper) {
+        return input -> switch (parser.parse(input)) {
+            case Fail<I, A, R>(R reason) -> Result.fail(reason);
+            case Ok<I, A, R>(A token, I rest) -> Result.ok(mapper.apply(token), rest);
+        };
+    }
 }
