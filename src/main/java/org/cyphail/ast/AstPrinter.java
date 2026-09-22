@@ -21,15 +21,21 @@ public final class AstPrinter {
     private static void printMatch(StringBuilder sb, MatchClause match) {
         sb.append("  Match: {\n");
         sb.append("    Patterns: [\n");
+
         for (PatternNode p : match.patterns()) {
-            sb.append("      PatternNode: {\n");
-            sb.append("        var: ").append(p.variable()).append("\n");
-            sb.append("        labels: [ ").append(String.join(", ", p.labels())).append(" ]\n");
-            sb.append("        properties: [").append(printProperties(p.properties())).append("]\n");
-            sb.append("      }\n");
+            printPattern(sb, p, "      ");
         }
+
         sb.append("    ]\n");
         sb.append("  }\n");
+    }
+
+    private static void printPattern(StringBuilder sb, PatternNode p, String indent) {
+        sb.append(indent).append("PatternNode: {\n");
+        sb.append(indent).append("  var: ").append(p.variable()).append("\n");
+        sb.append(indent).append("  labels: [ ").append(String.join(", ", p.labels())).append(" ]\n");
+        sb.append(indent).append("  properties: [").append(printProperties(p.properties())).append("]\n");
+        sb.append(indent).append("}\n");
     }
 
     private static String printProperties(List<PropertyEntry> properties) {
@@ -51,13 +57,29 @@ public final class AstPrinter {
 
     private static void printUpdates(StringBuilder sb, List<UpdateClause> updates) {
         sb.append("  Updates: [");
-        if (!updates.isEmpty()) {
-            sb.append("\n");
-            for (UpdateClause u : updates) {
-                sb.append("    ").append(printUpdate(u)).append("\n");
+        if (!updates.isEmpty()) {sb.append("\n");
+            for (UpdateClause update : updates) {
+                switch (update) {
+                    case CreateClause(var patterns) -> {
+                        sb.append("    Create: {\n");
+                        sb.append("      Patterns: [\n");
+
+                        for (PatternNode pattern : patterns) {
+                            printPattern(sb, pattern, "        ");
+                        }
+
+                        sb.append("      ]\n");
+                        sb.append("    }\n");
+                    }
+
+                    case DeleteClause(var variables) ->
+                            sb.append("    Delete: [ ").append(String.join(", ", variables)).append(" ]\n");
+                }
             }
+
             sb.append("  ");
         }
+
         sb.append("]\n");
     }
 

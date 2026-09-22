@@ -1,5 +1,5 @@
 package org.cyphail.ast;
 
-record PropertyEntry(String key, Expr value) {
+public record PropertyEntry(String key, Expr value) {
 
 }

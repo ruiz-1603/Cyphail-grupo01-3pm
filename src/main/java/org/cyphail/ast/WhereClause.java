@@ -1,5 +1,5 @@
 package org.cyphail.ast;
 
-record WhereClause(Expr condition) {
+public record WhereClause(Expr condition) {
 
 }

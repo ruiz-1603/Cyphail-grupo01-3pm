@@ -24,6 +24,12 @@ public final class Lexers {
                 match(re, TToken.NUM, source, "No number could be matched");
     }
 
+    public static Lexer StringLiteral() {
+        var re = Pattern.compile("\\s*\"(?<token>[^\"]*)\"");
+        return (InputString source) ->
+                match(re, TToken.STRING, source, "No string could be matched");
+    }
+
     public static Lexer Id() {
         var re = Pattern.compile("\\s*(?<token>[a-zA-Z_]\\w*)");
         return (InputString source) ->

@@ -113,7 +113,4 @@ public final class Parsers {
     public static <I, A, B, R> Parser<I, A, R> Left(Parser<I, A, R> first, Parser<I, B, R> second) {
         return Combine(first, second, (a, b) -> a);
     }
-
-
-
 }

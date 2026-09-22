@@ -1,5 +1,5 @@
 package org.cyphail.ast;
 
-record StringLit(String value) implements Expr {
+public record StringLit(String value) implements Expr {
 
 }
