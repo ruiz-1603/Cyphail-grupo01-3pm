@@ -30,6 +30,20 @@ public final class Lexers {
                 match(re, TToken.ID, source, "No id could be matched");
     }
 
+    public static Lexer Eof() {
+        var re = Pattern.compile("\\s*(?<token>\\z)");
+        return (InputString source) ->
+                match(re, TToken.EOF, source, "Expected end of input");
+    }
+
+    public static Lexer Keyword(String expected) {
+        return Literal(TToken.KEYWORD, expected);
+    }
+
+    public static Lexer Symbol(String expected) {
+        return Literal(TToken.SYMBOL, expected);
+    }
+
     private static Result<InputString, TokenString, String> match(
             Pattern re, TToken type, InputString source, String error) {
 

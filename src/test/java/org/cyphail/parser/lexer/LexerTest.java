@@ -67,4 +67,23 @@ class LexersTest {
                 result
         );
     }
+
+    @Test
+    void symbolRecognizesParenthesis() {
+        var result = Lexers.Symbol("(").parse(new InputString("(p:Persona)", 0));
+
+        assertEquals(
+                Result.ok(new TokenString(TToken.SYMBOL, "("),
+                        new InputString("(p:Persona)", 1)),
+                result
+        );
+    }
+
+    @Test
+    void symbolFailsOnOtherText() {
+        var result = Lexers.Symbol(":").parse(new InputString("(p)", 0));
+
+        assertEquals(Result.fail("Expected ':' at position 0"), result);
+    }
+
 }

@@ -1,7 +1,13 @@
 package org.cyphail.repl;
 
+import org.cyphail.ast.AstPrinter;
+import org.cyphail.ast.Query;
 import org.cyphail.data.FakeGraphData;
 import org.cyphail.engine.Engine;
+import org.cyphail.parser.CyphailParser;
+import org.cyphail.parser.core.Fail;
+import org.cyphail.parser.core.InputString;
+import org.cyphail.parser.core.Ok;
 import org.cyphail.util.TableFormatter;
 
 import java.util.LinkedHashMap;
@@ -32,6 +38,7 @@ public final class CommandRegistry {
         registry.put(".help", arg -> CommandOutcome.message(ReplMessages.help()));
         registry.put(".about", arg -> CommandOutcome.message(ReplMessages.about()));
         registry.put(".use", arg -> handleUse(engine, arg));
+        registry.put(".tree", arg -> handleTree(arg));
         return Map.copyOf(registry);
     }
 
@@ -58,4 +65,20 @@ public final class CommandRegistry {
 
         return TableFormatter.formatTable(table) + "\nOK. Query available after 5 ms.";
     }
+
+    private static CommandOutcome handleTree(String query) {
+        if (query == null) {
+            return CommandOutcome.message("Usage: .tree <query>");
+        }
+
+        return switch (CyphailParser.parse(query)) {
+            case Ok<InputString, Query, String>(Query ast, InputString rest) ->
+                    CommandOutcome.message(AstPrinter.print(ast));
+            case Fail<InputString, Query, String>(String reason) ->
+                    CommandOutcome.message("ERROR: " + reason);
+        };
+    }
+
+
+
 }
