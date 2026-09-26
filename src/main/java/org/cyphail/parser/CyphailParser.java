@@ -147,9 +147,22 @@ public final class CyphailParser {
         );
     }
 
-    // item := property alias
+    // variableExpr := ID   (variable "pelada", sin propiedad; p.ej. RETURN q AS name)
+    static Parser<InputString, Expr, String> VariableExpr() {
+        return Parsers.Map(
+                Lexers.Id(),
+                token -> new Var(token.value())
+        );
+    }
+
+    // projectionExpr := property | variableExpr
+    static Parser<InputString, Expr, String> ProjectionExpr() {
+        return Parsers.Or(Property(), VariableExpr());
+    }
+
+    // item := projectionExpr alias
     static Parser<InputString, ProjectionItem, String> Item() {
-        return Parsers.Combine(Property(), Alias(), ProjectionItem::new);
+        return Parsers.Combine(ProjectionExpr(), Alias(), ProjectionItem::new);
     }
 
     // items := item ("," item)*
@@ -166,13 +179,24 @@ public final class CyphailParser {
         });
     }
 
-    // comparisonOp := "<>" | "<" | ">"
+    // comparisonOp := "<=" | ">=" | "<>" | "=" | "<" | ">"
+    // Ojo con el orden: los símbolos de 2 caracteres deben probarse antes que
+    // sus prefijos de 1 caracter ("<=" antes que "<", ">=" antes que ">", etc.)
     static Parser<InputString, BinaryOp, String> ComparisonOp() {
         return Parsers.Or(
-                Parsers.Map(Lexers.Symbol("<>"), token -> BinaryOp.NEQ),
+                Parsers.Map(Lexers.Symbol("<="), token -> BinaryOp.LTE),
                 Parsers.Or(
-                        Parsers.Map(Lexers.Symbol("<"), token -> BinaryOp.LT),
-                        Parsers.Map(Lexers.Symbol(">"), token -> BinaryOp.GT)
+                        Parsers.Map(Lexers.Symbol(">="), token -> BinaryOp.GTE),
+                        Parsers.Or(
+                                Parsers.Map(Lexers.Symbol("<>"), token -> BinaryOp.NEQ),
+                                Parsers.Or(
+                                        Parsers.Map(Lexers.Symbol("="), token -> BinaryOp.EQ),
+                                        Parsers.Or(
+                                                Parsers.Map(Lexers.Symbol("<"), token -> BinaryOp.LT),
+                                                Parsers.Map(Lexers.Symbol(">"), token -> BinaryOp.GT)
+                                        )
+                                )
+                        )
                 )
         );
     }

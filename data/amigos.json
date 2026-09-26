@@ -1,0 +1,19 @@
+{
+  "description": "Social Network",
+  "nodes": [
+    {"nombre": "Ana", "edad": "28"},
+    {"nombre": "Luis", "edad": "31"},
+    {"nombre": "Carlos", "edad": "25"},
+    {"nombre": "Beatriz", "edad": "34"},
+    {"nombre": "David", "edad": "29"},
+    {"nombre": "Elena", "edad": "22"}
+  ],
+  "relationships": [
+    {"from": "Ana", "type": "AMIGO_DE", "to": "Luis"},
+    {"from": "Ana", "type": "AMIGO_DE", "to": "Beatriz"},
+    {"from": "Luis", "type": "AMIGO_DE", "to": "Carlos"},
+    {"from": "Luis", "type": "AMIGO_DE", "to": "David"},
+    {"from": "Carlos", "type": "AMIGO_DE", "to": "Elena"},
+    {"from": "Beatriz", "type": "AMIGO_DE", "to": "Elena"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "description": "People",
+  "nodes": [
+    {"id": "1", "name": "Priscilla", "age": "35"},
+    {"id": "2", "name": "Aaron", "age": "22"},
+    {"id": "3", "name": "Samael", "age": "65"},
+    {"id": "4", "name": "Daniel", "age": "40"},
+    {"id": "5", "name": "Nicolas", "age": "17"}
+  ],
+  "relationships": []
+}

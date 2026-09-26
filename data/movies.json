@@ -1,0 +1,12 @@
+{
+  "description": "Movie Database",
+  "nodes": [
+    {"title": "Inception", "year": "2010"},
+    {"title": "The Matrix", "year": "1999"},
+    {"title": "Interstellar", "year": "2014"},
+    {"title": "Titanic", "year": "1997"}
+  ],
+  "relationships": [
+    {"from": "Inception", "type": "SIMILAR_TO", "to": "Interstellar"}
+  ]
+}

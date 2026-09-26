@@ -6,6 +6,8 @@ import java.util.Optional;
 import org.cyphail.parser.core.InputString;
 import org.cyphail.parser.core.Result;
 import org.junit.jupiter.api.Test;
+import org.cyphail.parser.core.Ok;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -57,12 +59,11 @@ class CyphailParserTest {
         assertEquals(Result.fail("Expected 'MATCH' at position 0"), result);
     }
 
-    @Test
-    void failsWhenReturnItemHasNoProperty() {
+        @Test
+        void parsesReturnWithBareVariable() {
         var result = CyphailParser.parse("MATCH (m:Movie) RETURN m");
-
-        assertEquals(Result.fail("Expected '.' at position 24"), result);
-    }
+        assertTrue(result instanceof Ok);
+        }
 
     @Test
     void failsWhenThereIsTrailingText() {

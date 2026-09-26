@@ -1,61 +1,55 @@
 package org.cyphail.engine;
 
-import org.cyphail.data.FakeGraphData;
+import org.cyphail.data.JsonGraphLoader;
 import org.cyphail.util.TableFormatter;
 
-/*
- * Proyecto Cyphail
- * Grupo 01-3pm
- *
+import java.io.IOException;
+
+
+/**
+ * Proyecto Cyphail - Grupo 01-3pm
  * Autores:
  * - Priscilla Murillo Romero
  * - Aaron Ruiz Medina
  * - Samael Sanchez Mora
  * - Daniel Villarroel Abaduca
  * - Nicolás Zárate Hernández
+ * 
+ * Motor fake que ejecuta queries contra datos JSON cargados
  */
-
 public class FakePrologEngine implements Engine {
-    private String currentGraph = null;
+    private String currentGraph;
 
+    @Override
     public void setCurrentGraph(String graphName) {
-        if (FakeGraphData.graphExists(graphName)) {
-            this.currentGraph = graphName;
-        }
+        this.currentGraph = graphName;
     }
 
+    @Override
     public String getCurrentGraph() {
         return currentGraph;
     }
 
     @Override
-    public String execute(String command) {
+    public String execute(String query) {
         if (currentGraph == null) {
             return "ERROR: No graph selected. Use .use <graph_name> first.";
         }
 
-        FakeGraphData.GraphInfo graphInfo = FakeGraphData.getGraph(currentGraph);
-        String upperCommand = command.toUpperCase().trim();
-
-        // Validate query structure
-        if (upperCommand.startsWith("MATCH") && upperCommand.contains("RETURN")) {
+        try {
+            // Se relee el JSON de disco en cada ejecución para que los
+            // cambios hechos durante la defensa (sin recompilar) se vean.
+            JsonGraphLoader.GraphData data = JsonGraphLoader.loadGraph(currentGraph);
             long startTime = System.currentTimeMillis();
 
-            //  Determine query type based on relationship keywords
-            if (upperCommand.contains("AMIGO_DE") || upperCommand.contains("RIVAL") || 
-                upperCommand.contains("REQUIRES") || upperCommand.contains("ORBITA")) {
-                // Relationship query: return edges (aristas del grafo)
-                String table = TableFormatter.formatTable(graphInfo.edges);
-                long elapsed = System.currentTimeMillis() - startTime;
-                return table + "\nOK. Query resolved after " + elapsed + " ms.\n";
-            } else {
-                // Node query: return vertices (vértices del grafo)
-                String table = TableFormatter.formatTable(graphInfo.nodes);
-                long elapsed = System.currentTimeMillis() - startTime;
-                return table + "\nOK. Query resolved after " + elapsed + " ms.\n";
-            }
-        }
+            // El motor real (Prolog) llega en P2; por ahora el fake engine
+            // solo demuestra que los datos vienen de disco.
+            String table = TableFormatter.formatTable(data.nodes());
 
-        return "ERROR: Invalid command format.\n";
+            long elapsed = System.currentTimeMillis() - startTime;
+            return table + "\nOK. Query resolved after " + elapsed + " ms.\n";
+        } catch (IOException e) {
+            return "ERROR: Could not read data for graph '" + currentGraph + "': " + e.getMessage();
+        }
     }
 }
