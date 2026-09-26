@@ -1,3 +1,5 @@
+package org.cyphail.parser.result;
+
 import org.cyphail.parser.core.Fail;
 import org.cyphail.parser.core.Ok;
 import org.cyphail.parser.core.Result;
