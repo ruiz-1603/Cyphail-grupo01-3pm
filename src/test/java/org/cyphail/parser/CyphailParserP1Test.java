@@ -255,4 +255,71 @@ class CyphailParserP1Test {
         assertTrue(validation.isPresent(), "C11: 'p' is used before its own declaration in MATCH");
         assertTrue(validation.get().contains("'p'"));
     }
+
+    // ========== CASO 12 (Sorpresas) ==========
+    @Test
+    void c12_SurpriseVIPPromotion() {
+        // Demuestra:
+        // 1. Multiples labels con propiedades inline en MATCH: (c:Client:VIP {status: "active"})
+        // 2. Operador '>=' en WHERE (no cubierto en C1-C11)
+        // 3. CREATE con multiples labels y propiedades que referencian variables previas: (b:Badge:Gold ...)
+        // 4. DELETE de variable declarada en MATCH
+        // 5. Proyeccion RETURN usando variables introducidas en CREATE (expansion dinamica de scope)
+        String query = """
+                MATCH (c:Client:VIP {status: "active"})
+                WHERE c.rating >= 90
+                CREATE (b:Badge:Gold {clientId: c.id, level: "elite", year: 2026})
+                DELETE c
+                RETURN b.clientId AS id, b.level AS badgeLevel
+                """;
+
+        var result = CyphailParser.parse(query);
+        assertFalse(result instanceof Fail, "C12: Should parse successfully");
+
+        Query ast = ((Ok<InputString, Query, String>) result).token();
+
+        // Verificar MATCH con multiples labels y propiedades
+        var cPattern = ast.match().patterns().get(0);
+        assertEquals(2, cPattern.labels().size(), "C12: c should have 2 labels (Client, VIP)");
+        assertFalse(cPattern.properties().isEmpty(), "C12: c should have property status");
+
+        // Verificar WHERE con operador '>='
+        assertTrue(ast.where().isPresent(), "C12: Should have WHERE clause");
+        var condition = (Binary) ast.where().get().condition();
+        assertEquals(BinaryOp.GTE, condition.op(), "C12: WHERE operator should be GTE (>=)");
+
+        // Verificar CREATE y DELETE
+        assertEquals(2, ast.updates().size(), "C12: Should have CREATE and DELETE updates");
+        assertTrue(ast.updates().get(0) instanceof CreateClause);
+        assertTrue(ast.updates().get(1) instanceof DeleteClause);
+
+        // Verificar validacion de variables: 'b' introducida en CREATE debe ser valida en RETURN
+        var validation = VariableValidator.validate(ast);
+        assertTrue(validation.isEmpty(), "C12: Should have no variable errors because 'b' was declared in CREATE");
+
+        // Verificar pretty-print del AST
+        String tree = AstPrinter.print(ast);
+        assertTrue(tree.contains("(>= (. c rating) 90)"), "C12: Tree should format '>=' in prefix notation");
+        assertTrue(tree.contains("Badge, Gold"), "C12: Tree should display multiple labels for CREATE node");
+    }
+
+    @Test
+    void c12_SurpriseUndefinedVarInReturn() {
+        // Demuestra deteccion de error si se intenta proyectar una variable no definida en RETURN
+        String query = """
+                MATCH (c:Client:VIP {status: "active"})
+                WHERE c.rating >= 90
+                CREATE (b:Badge:Gold {clientId: c.id, level: "elite", year: 2026})
+                DELETE c
+                RETURN x.unknown AS val
+                """;
+
+        var result = CyphailParser.parse(query);
+        assertFalse(result instanceof Fail, "C12: Should parse successfully");
+
+        Query ast = ((Ok<InputString, Query, String>) result).token();
+        var validation = VariableValidator.validate(ast);
+        assertTrue(validation.isPresent(), "C12: Should report undefined variable 'x' in RETURN");
+        assertTrue(validation.get().contains("'x'"));
+    }
 }
