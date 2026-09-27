@@ -35,6 +35,8 @@ public final class ReplMessages {
                 "  .exit      - Exit the REPL",
                 "  .use       - List available graphs or select a graph",
                 "             - Usage: .use <graph_name>",
+                "  .tree      - Parse a query and print its AST",
+                "             - Usage: .tree <query>",
                 "",
                 "Query Examples:",
                 "  MATCH (p:Persona) RETURN p.nombre, p.edad",
@@ -58,4 +60,3 @@ public final class ReplMessages {
                 "");
     }
 }
-

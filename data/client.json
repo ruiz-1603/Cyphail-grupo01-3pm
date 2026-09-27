@@ -1,0 +1,9 @@
+{
+  "description": "VIP Clients and Badges",
+  "nodes": [
+    {"id": "101", "name": "Carlos", "status": "active", "rating": "95"},
+    {"id": "102", "name": "Elena", "status": "active", "rating": "92"},
+    {"id": "103", "name": "Roberto", "status": "inactive", "rating": "70"}
+  ],
+  "relationships": []
+}

@@ -1,0 +1,10 @@
+{
+  "description": "Book Collection",
+  "nodes": [
+    {"title": "The Hobbit", "pages": "310"},
+    {"title": "1984", "pages": "328"},
+    {"title": "The Great Gatsby", "pages": "180"},
+    {"title": "War and Peace", "pages": "1225"}
+  ],
+  "relationships": []
+}
