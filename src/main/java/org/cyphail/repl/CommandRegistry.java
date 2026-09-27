@@ -80,7 +80,7 @@ private static CommandOutcome handleTree(String query) {
 
     return switch (CyphailParser.parse(query)) {
         case Ok<InputString, Query, String>(Query ast, InputString rest) -> {
-            // ✅ VALIDAR VARIABLES PRIMERO
+            //  VALIDAR VARIABLES PRIMERO
             var validationError = VariableValidator.validate(ast);
             if (validationError.isPresent()) {
                 yield CommandOutcome.message("ERROR: " + validationError.get());

@@ -14,7 +14,7 @@ package org.cyphail.parser.core;
 FACTORY PATTERN
 
 I = rest input type (the next parser needs to know where to continue)
-T = token type(change depending the pipeline)
+T = token type(changes depending the pipeline)
 R = error reason type
 
 */
