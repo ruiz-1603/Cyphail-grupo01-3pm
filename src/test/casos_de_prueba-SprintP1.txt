@@ -1,0 +1,77 @@
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////   CASOS DE PRUEBA P1  Setiembre 2026/////////////
+//////////////////////////////////////////////////////////////////////////////
+
+// Solo casos de patrones de nodo (no de relaciones).
+// Más de un patrón de nodo en el match
+// Solo comparaciones <, >, <> entre expresiones simples y literales
+// No hay match anidadas
+// Todo query empieza con un match.
+
+// CASO 1 Un patrón y proyección con un alias.
+
+MATCH (m:Movie) RETURN m.title, m.year AS year
+
+
+------------------------------------------------------------------------------
+// CASO 2 Un patrón, where y proyección con un alias. Comparación.
+
+MATCH (b:Book) WHERE b.pages < 300 RETURN b.title, b.pages AS totalPages
+
+
+------------------------------------------------------------------------------
+// CASO 3 Un patrón con etiquetas múltiples
+
+MATCH (a:Person:Employee {id: 1}) WHERE a.age > 30 RETURN a.name AS name, a.age AS age
+
+
+------------------------------------------------------------------------------
+// CASO 4 Doble Patrón (desconectados), proyecciones con aliases
+
+MATCH (m:Movie), (p:Person) WHERE m.year > 2000 RETURN m.title AS title, p.name AS actor
+
+
+------------------------------------------------------------------------------
+// CASO 5  Doble patrón atributos distintos
+
+MATCH (m:Movie), (p:Person) WHERE m.year <> p.age RETURN m.title AS title, p.name AS name
+
+
+------------------------------------------------------------------------------
+// CASO 6 Doble patrón c/u con atributo
+
+MATCH (m:Movie {year: 1999}), (p:Person {age: 40}) WHERE m.year <> p.age RETURN m.title AS title, p.name AS name
+
+
+------------------------------------------------------------------------------
+// CASO 7 Match un patrón y create
+
+MATCH (p:Person) WHERE p.age > 18 CREATE (c:Certificate {issuedTo: "adult", year: 2026}) RETURN p.name AS name, p.age AS age
+
+
+------------------------------------------------------------------------------
+// CASO 8 Match con patrón de property expresión simple
+MATCH (p:Person {id: 1}), (o:Order {personId: p.id}) RETURN p.name AS name, o.total AS total
+
+
+------------------------------------------------------------------------------
+// CASO 9 Match create delete
+
+MATCH (p:Person), (o:Order {personId: p.id, status: "cancelled"}) WHERE p.age > 60 CREATE (a:Archive {id: o.id, name: "retired", year: 2026}) DELETE o RETURN p.name AS name
+
+
+------------------------------------------------------------------------------
+// CASO 10 Detección de variables no definidas
+
+MATCH (p:Person), (o:Order {personId: p.id, status: "cancelled"}) WHERE q.age > 60 RETURN q AS name
+
+
+------------------------------------------------------------------------------
+// CASO 11 Orden invertido variables no definidas (p.id antes de p)
+
+MATCH (o:Order {personId: p.id, status: "cancelled"}), (p:Person) WHERE p.age > 60 CREATE (a:Archive {id: o.id, name: "retired", year: 2026}) DELETE o RETURN p.name AS name
+
+
+------------------------------------------------------------------------------
+// CASO 12 Demuestra deteccion de error si se intenta proyectar una variable no definida en RETURN
+       MATCH (c:Client:VIP {status: "active"}) WHERE c.rating >= 90 CREATE (b:Badge:Gold {clientId: c.id, level: "elite", year: 2026}) DELETE c RETURN x.unknown AS val
