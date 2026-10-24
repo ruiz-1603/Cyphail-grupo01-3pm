@@ -1,6 +1,8 @@
 package org.cyphail.repl;
 
 import org.cyphail.engine.Engine;
+import org.cyphail.parser.CyphailParser;
+import org.cyphail.parser.core.Ok;
 import org.cyphail.util.IO;
 
 import java.util.Map;
@@ -34,21 +36,38 @@ public class Repl {
         replLoop();
     }
 
+    private String readQuery(Scanner scanner, String firstLine) {
+
+        StringBuilder query = new StringBuilder(firstLine);
+        while (scanner.hasNextLine()) {
+            if (!query.isEmpty() && CyphailParser.parse(query.toString()) instanceof Ok) {break;}
+            String line = scanner.nextLine();
+            if (line.isBlank()) {break;}
+            if (!query.isEmpty()) {query.append("\n");}
+            query.append(line);
+        }
+        return query.toString();
+    }
+
     private void replLoop() {
+
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
-        while (running) {
+
+        while (running && scanner.hasNextLine()) {
             IO.print("cyphail> ");
             String line = scanner.nextLine().trim();
-            if (line.isBlank()) continue;
-            if (line.startsWith(".")) {
-                running = !handleCommand(line);
-            } else {
-                queryHandler.run(line);
+            if (line.isBlank()) {continue;}
+            if (line.equals(".tree") || line.startsWith(".tree ")) {
+                String query = readQuery(scanner, line.substring(5).trim());
+                handleCommand(".tree " + query);}
+            else if (line.startsWith(".")) {running = !handleCommand(line);}
+            else {
+                String query = readQuery(scanner, line);
+                queryHandler.run(query);
             }
         }
     }
-
 
     boolean handleCommand(String line) {
         String[] parts = line.split("\\s+", 2);

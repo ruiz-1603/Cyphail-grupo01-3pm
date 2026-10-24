@@ -1,3 +1,4 @@
+
 package org.cyphail.parser.combinators;
 
 import org.cyphail.parser.core.Parser;
@@ -27,16 +28,17 @@ class ParsersTest {
             return Result.fail("Expected DEF");
         };
 
-        Parser<String, java.util.List<String>, String> combined = Parsers.Sequence(first, second);
+        Parser<String, java.util.List<String>, String> combined =
+                Parsers.Seq(first, second);
 
-        Result<String, java.util.List<String>, String> result = combined.parse("ABCDEF");
+        Result<String, java.util.List<String>, String> result =
+                combined.parse("ABCDEF");
 
         assertTrue(result instanceof Ok);
 
         var ok = (Ok<String, java.util.List<String>, String>) result;
 
         assertEquals(java.util.List.of("ABC", "DEF"), ok.token());
-
         assertEquals("", ok.rest());
     }
 
@@ -57,7 +59,9 @@ class ParsersTest {
             return Result.fail("Expected DEF");
         };
 
-        Result<String, java.util.List<String>, String> result = Parsers.Sequence(first, second).parse("ABCXYZ");
+        Result<String, java.util.List<String>, String> result =
+                Parsers.Seq(first, second).parse("ABCXYZ");
+
         assertTrue(result instanceof Fail);
 
         var fail = (Fail<String, java.util.List<String>, String>) result;
@@ -82,7 +86,10 @@ class ParsersTest {
             return Result.fail("Expected DEF");
         };
 
-        Parser<String, String, String> chosen = Parsers.Or(first, second);
+        Parser<String, String, String> chosen = Parsers.RFlat(
+                Parsers.Or(first, second),
+                reasons -> String.join(", ", reasons)
+        );
 
         Result<String, String, String> result = chosen.parse("DEF");
 
@@ -91,12 +98,11 @@ class ParsersTest {
         Ok<String, String, String> ok = (Ok<String, String, String>) result;
 
         assertEquals("DEF", ok.token());
-
         assertEquals("", ok.rest());
     }
 
     @Test
-    void mapTransformsParserResult() {
+    void thenTransformsParserResult() {
 
         Parser<String, String, String> parser = input -> {
             if (input.startsWith("ABC")) {
@@ -105,7 +111,10 @@ class ParsersTest {
             return Result.fail("Expected ABC");
         };
 
-        Parser<String, Integer, String> mapped = Parsers.Map(parser, text -> text.length());
+        Parser<String, Integer, String> mapped = Parsers.Then(
+                parser,
+                text -> source -> Result.ok(text.length(), source)
+        );
 
         Result<String, Integer, String> result = mapped.parse("ABCDEF");
 
@@ -114,16 +123,19 @@ class ParsersTest {
         Ok<String, Integer, String> ok = (Ok<String, Integer, String>) result;
 
         assertEquals(3, ok.token());
-
         assertEquals("DEF", ok.rest());
     }
 
     @Test
-    void mapKeepsParserFailure() {
+    void thenKeepsParserFailure() {
 
-        Parser<String, String, String> parser = input -> Result.fail("Expected ABC");
+        Parser<String, String, String> parser =
+                input -> Result.fail("Expected ABC");
 
-        Parser<String, Integer, String> mapped = Parsers.Map(parser, text -> text.length());
+        Parser<String, Integer, String> mapped = Parsers.Then(
+                parser,
+                text -> source -> Result.ok(text.length(), source)
+        );
 
         Result<String, Integer, String> result = mapped.parse("XYZ");
 
