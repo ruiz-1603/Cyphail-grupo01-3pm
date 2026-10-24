@@ -51,7 +51,7 @@ class LexersTest {
     void sequenceComposesLexers() {
         var source = new InputString("MATCH movie 42", 0);
 
-        var parser = Parsers.Sequence(
+        var parser = Parsers.Seq(
                 Lexers.Literal(TToken.KEYWORD, "MATCH"),
                 Lexers.Id(),
                 Lexers.Number()
