@@ -30,8 +30,8 @@
 
 cy_query_counter(0).
 
-% Separador de columnas de la tabla (tab: los valores pueden tener espacios)
-cy_col_sep('\t').
+% Separador de columnas de la tabla
+cy_col_sep(' ').
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Grafo actual (.use) %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -44,39 +44,6 @@ set_current_graph(G) :-
     cy_db(G),
     retractall(cy_current(_)),
     assertz(cy_current(G)).
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Nodos, etiquetas y propiedades %%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Accesores uniformes sobre el grafo G (hermanos de cy_edge/6). El CodeGen puede
-% emitir directamente user_G_node/label/prop o usar estos cuando G no se conoce
-% al generar. Todos son no deterministas (backtracking sobre las soluciones)
-
-% Llama a user_G_<Suffix>(Args...); el nombre se arma en ejecucion segun G
-cy_user_call(G, Suffix, Args, Goal) :-
-    atomic_list_concat([user, G, Suffix], '_', Name),
-    Goal =.. [Name|Args].
-
-cy_node(G, N) :-
-    cy_user_call(G, node, [N], Goal), call(Goal).
-
-cy_label(G, N, Label) :-
-    cy_user_call(G, label, [N, Label], Goal), call(Goal).
-
-cy_prop(G, Id, Key, Value) :-
-    cy_user_call(G, prop, [Id, Key, Value], Goal), call(Goal).
-
-%! cy_has_labels(+G, ?N, +Labels)
-%  N tiene todas las etiquetas de la lista: (a:Person:Employee)
-cy_has_labels(G, N, Labels) :-
-    cy_node(G, N),
-    maplist(cy_label(G, N), Labels).
-
-%! cy_prop_opt(+G, ?Id, +Key, -Value)
-%  Propiedad opcional para RETURN: si Id no tiene Key, Value queda sin ligar
-%  (se imprime null) en vez de descartar la fila, como hace Cypher. Para WHERE
-%  usar cy_prop/4: una propiedad ausente no cumple la condicion
-cy_prop_opt(G, Id, Key, Value) :-
-    (   cy_prop(G, Id, Key, V0) *-> Value = V0 ; true ).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Relaciones con direccion %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -176,7 +143,6 @@ cy_format_row(Sep, Head, Line) :-
     maplist(cy_format_value, Values, Cells),
     atomic_list_concat(Cells, Sep, Line).
 
-% Sin ligar -> null; numero -> sin comillas; texto -> entre comillas
+% Sin ligar -> null; cualquier otro valor se imprime tal cual (sin comillas)
 cy_format_value(V, null) :- var(V), !.
-cy_format_value(V, A) :- number(V), !, format(atom(A), '~w', [V]).
-cy_format_value(V, A) :- format(atom(A), '"~w"', [V]).
+cy_format_value(V, A) :- format(atom(A), '~w', [V]).

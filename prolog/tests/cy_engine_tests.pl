@@ -39,7 +39,7 @@ test(caso1_match_simple_con_alias_de_columna) :-       % MATCH (m:Movie) RETURN 
       ( user_movies_node(M), user_movies_label(M, 'Movie'),
         user_movies_prop(M, title, T), user_movies_prop(M, year, Y) ),
       ['m.title', year], Rows),
-    filas(Rows, S), S == ['"Avatar"\t2009', '"Matrix"\t1999'].
+    filas(Rows, S), S == ['Avatar 2009', 'Matrix 1999'].
 
 test(propiedad_faltante_descarta_fila) :-              % 'Sin Anio' no aparece
     q(r(T), ( user_movies_node(M), user_movies_prop(M, year, _), user_movies_prop(M, title, T) ),
@@ -50,13 +50,13 @@ test(where_filtra) :-                                  % WHERE m.year > 2000
     q(r(T), ( user_movies_node(M), user_movies_label(M, 'Movie'),
               user_movies_prop(M, year, Y), cy_gt(Y, 2000), user_movies_prop(M, title, T) ),
       ['t'], Rows),
-    Rows == 't\n"Avatar"'.
+    Rows == 't\nAvatar'.
 
 test(multiples_etiquetas) :-                           % (a:Person:Employee)
     q(r(N), ( user_movies_node(A), user_movies_label(A, 'Person'), user_movies_label(A, 'Employee'),
               user_movies_prop(A, name, N) ),
       ['n'], Rows),
-    Rows == 'n\n"Keanu"'.
+    Rows == 'n\nKeanu'.
 
 test(sin_resultados_solo_header) :-
     q(r(N), ( user_amigos_prop(_, name, N), cy_eq(N, 'Nadie') ), ['n'], Rows),
@@ -73,7 +73,7 @@ test(ciclo_amigos_mutuos) :-        % MATCH (a)-[:amigo]->(b),(b)-[:amigo]->(a) 
         cy_neq(E1, E2),
         user_amigos_prop(A, name, NA), user_amigos_prop(B, name, NB) ),
       ['a.name', 'b.name'], Rows),
-    filas(Rows, S), S == ['"Ana"\t"Luis"', '"Luis"\t"Ana"'].
+    filas(Rows, S), S == ['Ana Luis', 'Luis Ana'].
 
 test(join_colegas_spec_p2) :-       % misma empresa, p.nombre <> c.nombre
     q(r(NP, NC, NE),
@@ -82,15 +82,15 @@ test(join_colegas_spec_p2) :-       % misma empresa, p.nombre <> c.nombre
         cy_neq(NP, NC), user_empresa_prop(E, nombre, NE) ),
       ['p.nombre', 'c.nombre', 'e.nombre'], Rows),
     filas(Rows, S),
-    S == ['"Jose"\t"Lucia"\t"UNA"', '"Jose"\t"Marta"\t"UCR"', '"Jose"\t"Pedro"\t"UNA"',
-          '"Lucia"\t"Jose"\t"UNA"', '"Lucia"\t"Pedro"\t"UNA"', '"Marta"\t"Jose"\t"UCR"',
-          '"Pedro"\t"Jose"\t"UNA"', '"Pedro"\t"Lucia"\t"UNA"'].
+    S == ['Jose Lucia UNA', 'Jose Marta UCR', 'Jose Pedro UNA',
+          'Lucia Jose UNA', 'Lucia Pedro UNA', 'Marta Jose UCR',
+          'Pedro Jose UNA', 'Pedro Lucia UNA'].
 
 test(propiedad_de_relacion) :-      % WHERE r.since < 2000
     q(r(NA), ( cy_edge(amigos, out, E, _, A, _), user_amigos_prop(E, since, S), cy_lt(S, 2000),
                user_amigos_prop(A, name, NA) ),
       ['a.name'], Rows),
-    Rows == 'a.name\n"Ana"'.
+    Rows == 'a.name\nAna'.
 
 test(null_si_no_ligado) :-
     q(r(_), true, ['x'], Rows), Rows == 'x\nnull'.
@@ -103,26 +103,6 @@ test(set_current_graph) :-
     set_current_graph(empresa), get_current_graph(empresa),
     \+ set_current_graph(no_existe).
 :- end_tests(queries).
-
-:- begin_tests(accesores).
-test(node_label_prop, [nondet]) :-
-    cy_node(amigos, n1), cy_label(amigos, n1, 'Female'), cy_prop(amigos, n1, name, 'Ana').
-test(cuenta_nodos, true(N == 6)) :-
-    aggregate_all(count, cy_node(amigos, _), N).
-test(grafo_inexistente_lanza, [throws(error(existence_error(procedure, _), _))]) :-
-    cy_node(no_existe, _).
-test(has_labels_multiples, true(L == [n2, n3, n5])) :-          % (a:Person:Male)
-    findall(N, cy_has_labels(amigos, N, ['Person', 'Male']), L).
-test(has_labels_ninguno) :-
-    \+ cy_has_labels(amigos, _, ['Person', 'Robot']).
-test(prop_opt_presente, [nondet, true(V == 28)]) :-
-    cy_prop_opt(amigos, n1, age, V).
-test(prop_opt_ausente_queda_null) :-         % n5 (David) no tiene age -> null, no se descarta
-    q(r(N, Age), ( cy_node(amigos, X), cy_prop(amigos, X, name, N), cy_eq(N, 'David'),
-                   cy_prop_opt(amigos, X, age, Age) ),
-      [name, age], Rows),
-    Rows == 'name\tage\n"David"\tnull'.
-:- end_tests(accesores).
 
 :- begin_tests(errores_y_limpieza).
 test(error_en_query_se_propaga, [throws(error(type_error(evaluable, _), _))]) :-
