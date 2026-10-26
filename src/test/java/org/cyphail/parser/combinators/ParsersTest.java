@@ -101,48 +101,39 @@ class ParsersTest {
         assertEquals("", ok.rest());
     }
 
+
     @Test
-    void thenTransformsParserResult() {
+    void tFlatTransformsParserResult() {
 
-        Parser<String, String, String> parser = input -> {
-            if (input.startsWith("ABC")) {
-                return Result.ok("ABC", input.substring(3));
-            }
-            return Result.fail("Expected ABC");
-        };
+        Parser<String, java.util.List<String>, String> parser =
+                input -> Result.ok(java.util.List.of("ABC", "DEF"), input.substring(6));
 
-        Parser<String, Integer, String> mapped = Parsers.Then(
-                parser,
-                text -> source -> Result.ok(text.length(), source)
-        );
+        Parser<String, String, String> combined = Parsers.TFlat(parser, tokens -> String.join("", tokens));
 
-        Result<String, Integer, String> result = mapped.parse("ABCDEF");
+        Result<String, String, String> result = combined.parse("ABCDEF");
 
         assertTrue(result instanceof Ok);
 
-        Ok<String, Integer, String> ok = (Ok<String, Integer, String>) result;
+        var ok = (Ok<String, String, String>) result;
 
-        assertEquals(3, ok.token());
-        assertEquals("DEF", ok.rest());
+        assertEquals("ABCDEF", ok.token());
+        assertEquals("", ok.rest());
     }
 
     @Test
-    void thenKeepsParserFailure() {
+    void tFlatKeepsParserFailure() {
 
-        Parser<String, String, String> parser =
-                input -> Result.fail("Expected ABC");
+        Parser<String, java.util.List<String>, String> parser = input -> Result.fail("Expected ABC");
 
-        Parser<String, Integer, String> mapped = Parsers.Then(
-                parser,
-                text -> source -> Result.ok(text.length(), source)
-        );
+        Parser<String, String, String> combined = Parsers.TFlat(parser, tokens -> String.join("", tokens));
 
-        Result<String, Integer, String> result = mapped.parse("XYZ");
+        Result<String, String, String> result = combined.parse("XYZ");
 
         assertTrue(result instanceof Fail);
 
-        Fail<String, Integer, String> fail = (Fail<String, Integer, String>) result;
+        var fail = (Fail<String, String, String>) result;
 
         assertEquals("Expected ABC", fail.reason());
     }
+
 }
