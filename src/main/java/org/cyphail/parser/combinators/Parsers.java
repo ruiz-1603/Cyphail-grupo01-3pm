@@ -85,11 +85,4 @@ public final class Parsers {
         };
     }
 
-    //sirve para ejecutar dos parsers consecutivamente, utilizando el resultado del primero para construir el segundo.
-    public static <I, A, B, R> Parser<I, B, R> Then(Parser<I, A, R> p, Function<A, Parser<I, B, R>> next) {
-        return source -> switch (p.parse(source)) {
-            case Fail(R reason) -> new Fail<I, B, R>(reason);
-            case Ok(A token, I rest) -> next.apply(token).parse(rest);
-        };
-    }
 }
