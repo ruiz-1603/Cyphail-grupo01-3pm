@@ -206,6 +206,56 @@ RETURN b.clientId AS id, b.level AS badgeLevel
 
 ---
 
+## CodeGen: Cyphail → Prolog Transpiler (Sprint P2)
+
+The `codegen` package transpiles a validated AST into Prolog goals that the SWI-Prolog engine (`prolog/cy_engine.pl`) executes through MQI. `CodeGen` is an AST visitor written with sealed types and pattern-matching `switch`; it threads an immutable state (symbol table + emitted goals) from one method to the next.
+
+```java
+GeneratedQuery gen = CodeGen.generate(query, currentGraph);  // currentGraph: the one selected with .use
+gen.goal();     // Prolog goal sent through MQI (no final period)
+gen.columns();  // RETURN column names, in order (alias or query text)
+gen.symbols();  // SymbolTable: Cyphail variable -> Prolog variable
+```
+
+### Generated goal
+
+```text
+MATCH (m:Movie) WHERE m.year > 2000 RETURN m.title
+```
+```prolog
+cy_create_query(__QueryId, (cy_row(__M_title) :- user_movies_node(__M), user_movies_label(__M, 'Movie'),
+    user_movies_prop(__M, year, __M_year), cy_gt(__M_year, 2000), user_movies_prop(__M, title, __M_title))),
+cy_exec_query(__QueryId, ['m.title'], Rows), cy_erase_query(__QueryId)
+```
+
+The engine binds `Rows` to the table as text (`header\nrow1\nrow2...`, columns separated by a space); with no results it holds only the header. The broker extracts that binding from the MQI JSON response.
+
+### Translation rules
+
+| Cyphail | Prolog |
+|---------|--------|
+| `(a:L1:L2)` | `user_G_node(__A), user_G_label(__A, 'L1'), user_G_label(__A, 'L2')` |
+| `(a:L)` again (join variable) | only `user_G_label(__A, 'L')` |
+| `{name: "Ana"}` | `user_G_prop(__A, name, __A_name), cy_eq(__A_name, 'Ana')` |
+| `a.age > 18` | `user_G_prop(__A, age, __A_age), cy_gt(__A_age, 18)` |
+| `= <> < > <= >=` | `cy_eq cy_neq cy_lt cy_gt cy_le cy_ge` |
+| `RETURN a.name AS nombre` | argument `__A_name` of `cy_row`, column `nombre` |
+| `RETURN a` | argument `__A`: only the node id (P2 restriction) |
+
+`G` is the current graph. A property is fetched only once even if it is used several times; a row whose property is missing is discarded.
+
+### Variable mapping
+
+- Cyphail variables become Prolog variables with the `__` prefix and the first letter in uppercase: `a` → `__A`, `persona` → `__Persona`.
+- Property computations get their own variable: `a.name` → `__A_name`.
+- `SymbolTable` keeps these associations to build the final table in Java, and resolves collisions with a `_N` suffix (`a` and `A` → `__A`, `__A_2`). `__QueryId` and `Rows` are reserved.
+
+### P2 scope
+
+As indicated by the professor in class, only read queries (`MATCH`, `WHERE`, `RETURN`) are transpiled. `CREATE` and `DELETE` are still parsed and shown by `.tree`, but `CodeGen` rejects them with a `CodeGenException` (`"CREATE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)"`). Relationship patterns will be translated to the engine's `cy_edge(G, out|in|none, E, Type, A, B)` once the AST supports them.
+
+---
+
 ## Project Structure
 
 ```
@@ -231,6 +281,10 @@ Cyphail-grupo01-3pm/
     │   │   ├── MatchClause.java / WhereClause.java / ReturnClause.java
     │   │   ├── PatternNode.java / PropertyEntry.java / PropertyAccess.java
     │   │   └── Query.java / Projection.java / ProjectionItem.java
+    │   ├── codegen/                          # Cyphail -> Prolog transpiler (P2)
+    │   │   ├── CodeGen.java / GeneratedQuery.java
+    │   │   ├── SymbolTable.java / PrologSyntax.java
+    │   │   └── CodeGenException.java
     │   ├── cli/                              # Picocli command bindings
     │   │   ├── CyphailCommand.java
     │   │   └── ReplCommand.java
@@ -255,6 +309,9 @@ Cyphail-grupo01-3pm/
     │   └── validator/                        # Semantic scope validation
     │       └── VariableValidator.java
     └── test/java/org/cyphail/
+        ├── codegen/
+        │   ├── CodeGenTest.java              # Hand-built ASTs -> Prolog goals
+        │   └── PrologSyntaxTest.java
         └── parser/
             ├── AstPrinterTest.java
             ├── CyphailParserTest.java
