@@ -1,116 +1,95 @@
+
 package org.cyphail.parser.combinators;
 
 import org.cyphail.parser.core.Fail;
 import org.cyphail.parser.core.Ok;
 import org.cyphail.parser.core.Parser;
-import org.cyphail.parser.core.Result;
+
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Optional;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public final class Parsers {
 
     private Parsers() {}
 
+    // Intenta varios parsers hasta que uno funcione
     @SafeVarargs
-    public static <I, T, R> Parser<I, List<T>, R> Sequence(Parser<I, T, R>... parsers) {
-        return input -> {
-            List<T> results = new ArrayList<>();
-            I source = input;
+    public static <I, T, R> Parser<I, T, List<R>> Or(Parser<I, T, R>... parsers) {
 
+        Parser<I, T, List<R>> parser = (I source) -> {
+            var reasons = new ArrayList<R>();
             for (var p : parsers) {
                 switch (p.parse(source)) {
-                    case Fail<I, T, R>(R reason) -> {
-                        return Result.fail(reason);
-                    }
-                    case Ok<I, T, R>(T token, I rest) -> {
-                        results.add(token);
-                        source = rest;
-                    }
+                    case Fail(R reason) -> {reasons.add(reason);}
+                    case Ok(T token, I rest) -> {return new Ok<I, T, List<R>>(token, rest);}
                 }
             }
 
-            return Result.ok(results, source);
+            return new Fail<I, T, List<R>>(reasons);
         };
+
+        return parser;
     }
 
-    public static <I, T, R> Parser<I, T, R> Or(Parser<I, T, R> first, Parser<I, T, R> second) {
-        return input -> switch (first.parse(input)) {
-            case Ok<I, T, R> ok -> ok;
-            case Fail<I, T, R> _ -> second.parse(input);
-        };
-    }
+    // Ejecuta varios parsers en secuencia
+    @SafeVarargs
+    public static <I, T, R> Parser<I, List<T>, R> Seq(Parser<I, T, R>... parsers) {
 
-    public static <I, T, R> Parser<I, Optional<T>, R> Opt(Parser<I, T, R> parser) {
-        return input -> switch (parser.parse(input)) {
-            case Ok<I, T, R>(T token, I rest) -> Result.ok(Optional.of(token), rest);
-            case Fail<I, T, R> _ -> Result.ok(Optional.empty(), input);
-        };
-    }
-
-    public static <I, T, R> Parser<I, List<T>, R> Star(Parser<I, T, R> parser) {
-        return input -> {
+        Parser<I, List<T>, R> parser = (I source) -> {
             List<T> results = new ArrayList<>();
-            I source = input;
+            for (var p : parsers) {
+                switch (p.parse(source)) {
+                    case Fail(R reason) -> {return new Fail<I, List<T>, R>(reason);}
+                    case Ok(T token, I rest) -> {results.add(token);source = rest;}
+                }
+            }
+            return new Ok<I, List<T>, R>(results, source);
+        };
 
+        return parser;
+    }
+
+    // Reconoce cero o mas repeticiones
+    public static <I, T, R> Parser<I, List<T>, R> Star(Parser<I, T, R> parser) {
+
+        Parser<I, List<T>, R> pstar = (I source) -> {
+            var tokens = new ArrayList<T>();
+            trying:
             while (true) {
                 switch (parser.parse(source)) {
-                    case Fail<I, T, R> _ -> {
-                        return Result.ok(results, source);
-                    }
-                    case Ok<I, T, R>(T token, I rest) -> {
-                        results.add(token);
-                        source = rest;
-                    }
+                    case Ok(T token, I rest) -> {tokens.add(token);source = rest;}
+                    case Fail(R reason) -> {break trying;}
                 }
             }
+            return new Ok<I, List<T>, R>(tokens, source);
+        };
+
+        return pstar;
+    }
+
+    // Transforma una lista de tokens en un solo resultado
+    public static <I, T, R> Parser<I, T, R> TFlat(Parser<I, List<T>, R> p, Function<List<T>, T> cat) {
+
+        return (I source) -> switch (p.parse(source)) {
+            case Fail(R reason) -> new Fail<I, T, R>(reason);
+            case Ok(List<T> tokens, I rest) -> new Ok<I, T, R>(cat.apply(tokens), rest);
         };
     }
 
-    public static <I, T, R> Parser<I, List<T>, R> Plus(Parser<I, T, R> parser) {
-        Parser<I, List<T>, R> star = Star(parser);
-
-        return input -> switch (parser.parse(input)) {
-            case Fail<I, T, R>(R reason) -> Result.fail(reason);
-            case Ok<I, T, R>(T first, I rest) -> switch (star.parse(rest)) {
-                case Fail<I, List<T>, R>(R reason) -> Result.fail(reason);
-                case Ok<I, List<T>, R>(List<T> others, I end) -> {
-                    List<T> all = new ArrayList<>();
-                    all.add(first);
-                    all.addAll(others);
-                    yield Result.ok(all, end);
-                }
-            };
+    // Transforma una lista de errores en un solo error
+    public static <I, T, R> Parser<I, T, R> RFlat(Parser<I, T, List<R>> p, Function<List<R>, R> cat) {
+        return (I source) -> switch (p.parse(source)) {
+            case Fail(List<R> reasons) -> new Fail<I, T, R>(cat.apply(reasons));
+            case Ok(T token, I rest) -> new Ok<I, T, R>(token, rest);
         };
     }
 
-
-
-    public static <I, A, B, R> Parser<I, B, R> Map(Parser<I, A, R> parser, Function<A, B> mapper) {
-        return input -> switch (parser.parse(input)) {
-            case Fail<I, A, R>(R reason) -> Result.fail(reason);
-            case Ok<I, A, R>(A token, I rest) -> Result.ok(mapper.apply(token), rest);
+    //sirve para ejecutar dos parsers consecutivamente, utilizando el resultado del primero para construir el segundo.
+    public static <I, A, B, R> Parser<I, B, R> Then(Parser<I, A, R> p, Function<A, Parser<I, B, R>> next) {
+        return source -> switch (p.parse(source)) {
+            case Fail(R reason) -> new Fail<I, B, R>(reason);
+            case Ok(A token, I rest) -> next.apply(token).parse(rest);
         };
-    }
-
-    public static <I, A, B, C, R> Parser<I, C, R> Combine(
-            Parser<I, A, R> first, Parser<I, B, R> second, BiFunction<A, B, C> combiner) {
-        return input -> switch (first.parse(input)) {
-            case Fail<I, A, R>(R reason) -> Result.fail(reason);
-            case Ok<I, A, R>(A a, I rest) -> switch (second.parse(rest)) {
-                case Fail<I, B, R>(R reason) -> Result.fail(reason);
-                case Ok<I, B, R>(B b, I end) -> Result.ok(combiner.apply(a, b), end);
-            };
-        };
-    }
-
-    public static <I, A, B, R> Parser<I, B, R> Right(Parser<I, A, R> first, Parser<I, B, R> second) {
-        return Combine(first, second, (a, b) -> b);
-    }
-
-    public static <I, A, B, R> Parser<I, A, R> Left(Parser<I, A, R> first, Parser<I, B, R> second) {
-        return Combine(first, second, (a, b) -> a);
     }
 }
