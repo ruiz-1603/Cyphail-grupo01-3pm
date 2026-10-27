@@ -1,4 +1,5 @@
 package org.cyphail.ast;
 
-public sealed interface UpdateClause permits CreateClause, DeleteClause {
+/** Clausulas que modifican el grafo, en el orden en que se escriben. */
+public sealed interface UpdateClause permits CreateClause, SetClause, RemoveClause, DeleteClause {
 }
