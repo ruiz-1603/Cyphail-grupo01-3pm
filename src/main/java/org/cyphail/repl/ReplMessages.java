@@ -1,7 +1,7 @@
 package org.cyphail.repl;
 
 /*
-* * Proyecto Cyphail
+ * Proyecto Cyphail
  * Grupo 01-3pm
  *
  * Autores:
@@ -10,7 +10,7 @@ package org.cyphail.repl;
  * - Samael Sanchez Mora
  * - Daniel Villarroel Abaduca
  * - Nicolás Zárate Hernández
-*/
+ */
 
 public final class ReplMessages {
     private ReplMessages() {}
@@ -18,7 +18,7 @@ public final class ReplMessages {
     public static String welcome() {
         return String.join("\n",
                 "────────────────────────────────────────",
-                "  Cyphail-01-3pm  v0.1",
+                "  Cyphail-01-3pm  v0.2 (Sprint P2)",
                 "  ESCINF / UNA · EIF400-II-2026",
                 "  Visit www.whatiscyphail.com for more information",
                 "────────────────────────────────────────",
@@ -36,11 +36,13 @@ public final class ReplMessages {
                 "  .use       - List available graphs or select a graph",
                 "             - Usage: .use <graph_name>",
                 "  .tree      - Parse a query and print its AST",
-                "             - Usage: .tree <query>",
+                "             - Usage: .tree <query>;",
+                "  .load      - Load, parse, and execute a .cyphail script file",
+                "             - Usage: .load \"path/to/script.cyphail\"",
                 "",
-                "Query Examples:",
-                "  MATCH (p:Persona) RETURN p.nombre, p.edad",
-                "  MATCH (p1:Persona)-[r:AMIGO_DE]->(p2:Persona) RETURN p1.nombre, type(r), p2.nombre",
+                "Query Examples (multiline statements end with ';'):",
+                "  MATCH (m:Movie) WHERE m.year > 2000 RETURN m.title;",
+                "  MATCH (p:Person) RETURN p.name, p.age;",
                 "");
     }
 

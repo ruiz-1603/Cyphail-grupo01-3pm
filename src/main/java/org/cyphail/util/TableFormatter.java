@@ -1,6 +1,8 @@
 package org.cyphail.util;
 
 import java.util.Arrays;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /*
  * Proyecto Cyphail
@@ -17,47 +19,39 @@ import java.util.Arrays;
 public class TableFormatter {
 
     public static String formatTable(String[][] data) {
-        if (data == null || data.length == 0) {
+        if (data == null || data.length == 0 || data[0].length == 0) {
             return "";
         }
 
-        // Calculate column widths based on content
         int cols = data[0].length;
-        int[] colWidths = new int[cols];
+        int[] colWidths = IntStream.range(0, cols)
+                .map(col -> Arrays.stream(data)
+                        .mapToInt(row -> col < row.length && row[col] != null ? row[col].length() : 0)
+                        .max()
+                        .orElse(0))
+                .toArray();
 
-        for (String[] row : data) {
-            for (int i = 0; i < cols; i++) {
-                colWidths[i] = Math.max(colWidths[i], row[i].length());
-            }
-        }
+        String headerLine = formatRow(data[0], colWidths);
+        String separatorLine = IntStream.range(0, cols)
+                .mapToObj(i -> "-".repeat(colWidths[i]))
+                .collect(Collectors.joining("  "));
 
-        // Build formatted table
-        StringBuilder sb = new StringBuilder();
-        boolean isHeader = true;
+        String bodyLines = Arrays.stream(data)
+                .skip(1)
+                .map(row -> formatRow(row, colWidths))
+                .collect(Collectors.joining("\n"));
 
-        for (String[] row : data) {
-            for (int i = 0; i < cols; i++) {
-                String cell = row[i];
-                sb.append(String.format("%-" + colWidths[i] + "s", cell));
-                if (i < cols - 1) {
-                    sb.append("  ");
-                }
-            }
-            sb.append("\n");
+        return bodyLines.isEmpty()
+                ? headerLine + "\n" + separatorLine + "\n"
+                : headerLine + "\n" + separatorLine + "\n" + bodyLines + "\n";
+    }
 
-            // Add separator line after header
-            if (isHeader) {
-                for (int i = 0; i < cols; i++) {
-                    sb.append("-".repeat(colWidths[i]));
-                    if (i < cols - 1) {
-                        sb.append("  ");
-                    }
-                }
-                sb.append("\n");
-                isHeader = false;
-            }
-        }
-
-        return sb.toString();
+    private static String formatRow(String[] row, int[] colWidths) {
+        return IntStream.range(0, colWidths.length)
+                .mapToObj(i -> {
+                    String cell = (i < row.length && row[i] != null) ? row[i] : "";
+                    return String.format("%-" + colWidths[i] + "s", cell);
+                })
+                .collect(Collectors.joining("  "));
     }
 }
