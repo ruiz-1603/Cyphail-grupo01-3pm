@@ -4,7 +4,7 @@ import org.cyphail.data.JsonGraphLoader;
 import org.cyphail.util.TableFormatter;
 
 import java.io.IOException;
-
+import java.util.List;
 
 /**
  * Proyecto Cyphail - Grupo 01-3pm
@@ -14,15 +14,29 @@ import java.io.IOException;
  * - Samael Sanchez Mora
  * - Daniel Villarroel Abaduca
  * - Nicolás Zárate Hernández
- * 
- * Motor fake que ejecuta queries contra datos JSON cargados
+ *
+ * Motor fake (Sprint P1) que ejecuta queries contra datos JSON cargados.
  */
 public class FakePrologEngine implements Engine {
     private String currentGraph;
 
     @Override
+    public List<String> listAvailableGraphs() {
+        try {
+            return JsonGraphLoader.listAvailableGraphs();
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not read data directory: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public void setCurrentGraph(String graphName) {
-        this.currentGraph = graphName;
+        try {
+            JsonGraphLoader.loadGraph(graphName);
+            this.currentGraph = graphName;
+        } catch (IOException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
     }
 
     @Override
@@ -37,15 +51,9 @@ public class FakePrologEngine implements Engine {
         }
 
         try {
-            // Se relee el JSON de disco en cada ejecución para que los
-            // cambios hechos durante la defensa (sin recompilar) se vean.
             JsonGraphLoader.GraphData data = JsonGraphLoader.loadGraph(currentGraph);
             long startTime = System.currentTimeMillis();
-
-            // El motor real (Prolog) llega en P2; por ahora el fake engine
-            // solo demuestra que los datos vienen de disco.
             String table = TableFormatter.formatTable(data.nodes());
-
             long elapsed = System.currentTimeMillis() - startTime;
             return table + "\nOK. Query resolved after " + elapsed + " ms.\n";
         } catch (IOException e) {

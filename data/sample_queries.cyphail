@@ -1,0 +1,7 @@
+// Script de prueba para el comando .load en Sprint P2
+MATCH (m:Movie)
+WHERE m.year > 2000
+RETURN m.title AS title, m.year AS year;
+
+MATCH (p:Person:Employee)
+RETURN p.name AS employeeName;

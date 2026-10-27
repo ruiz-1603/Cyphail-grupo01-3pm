@@ -1,10 +1,10 @@
 package org.cyphail.repl;
 
 import org.cyphail.engine.Engine;
-import org.cyphail.parser.CyphailParser;
-import org.cyphail.parser.core.Ok;
 import org.cyphail.util.IO;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Scanner;
 
@@ -20,59 +20,97 @@ import java.util.Scanner;
  * - Nicolás Zárate Hernández
  */
 
-// single responsability
-// invoker of the command pattern, only reads console lines, doesn't know about intern logic
+// Invoker of the command pattern; reads console lines (including multiline queries ending with ';')
 public class Repl {
+    private final Engine engine;
     private final Map<String, ReplCommand> commands;
     private final QueryHandler queryHandler;
 
     public Repl(Engine engine) {
+        this.engine = engine;
         this.commands = CommandRegistry.forEngine(engine);
         this.queryHandler = new QueryHandler(engine);
     }
 
     public void start() {
+        start(System.in);
+    }
+
+    public void start(InputStream input) {
         IO.println(ReplMessages.welcome());
-        replLoop();
-    }
-
-    private String readQuery(Scanner scanner, String firstLine) {
-
-        StringBuilder query = new StringBuilder(firstLine);
-        while (scanner.hasNextLine()) {
-            if (!query.isEmpty() && CyphailParser.parse(query.toString()) instanceof Ok) {break;}
-            String line = scanner.nextLine();
-            if (line.isBlank()) {break;}
-            if (!query.isEmpty()) {query.append("\n");}
-            query.append(line);
-        }
-        return query.toString();
-    }
-
-    private void replLoop() {
-
-        Scanner scanner = new Scanner(System.in);
-        boolean running = true;
-
-        while (running && scanner.hasNextLine()) {
-            IO.print("cyphail> ");
-            String line = scanner.nextLine().trim();
-            if (line.isBlank()) {continue;}
-            if (line.equals(".tree") || line.startsWith(".tree ")) {
-                String query = readQuery(scanner, line.substring(5).trim());
-                handleCommand(".tree " + query);}
-            else if (line.startsWith(".")) {running = !handleCommand(line);}
-            else {
-                String query = readQuery(scanner, line);
-                queryHandler.run(query);
-            }
+        try (Scanner scanner = new Scanner(input, StandardCharsets.UTF_8)) {
+            replLoop(scanner);
+        } finally {
+            engine.close();
         }
     }
 
-    boolean handleCommand(String line) {
-        String[] parts = line.split("\\s+", 2);
+    /**
+     * Reads a single-line or multi-line statement recursively until a trailing ';' is found
+     * (or until a blank line / EOF is reached). Strips the trailing ';' before returning.
+     */
+    public static String readQuery(Scanner scanner, String accumulated) {
+        String current = accumulated == null ? "" : accumulated;
+        if (current.stripTrailing().endsWith(";")) {
+            return stripTrailingSemicolon(current);
+        }
+        if (!scanner.hasNextLine()) {
+            return stripTrailingSemicolon(current);
+        }
+        String nextLine = scanner.nextLine();
+        if (nextLine.isBlank() && !current.isBlank()) {
+            return stripTrailingSemicolon(current);
+        }
+        String combined = current.isBlank()
+                ? nextLine.trim()
+                : current + "\n" + nextLine;
+        return readQuery(scanner, combined);
+    }
+
+    public static String stripTrailingSemicolon(String text) {
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.stripTrailing();
+        return trimmed.endsWith(";")
+                ? trimmed.substring(0, trimmed.length() - 1).stripTrailing()
+                : trimmed;
+    }
+
+    private void replLoop(Scanner scanner) {
+        if (!scanner.hasNextLine()) {
+            return;
+        }
+        IO.print("cyphail> ");
+        String line = scanner.nextLine().trim();
+
+        boolean shouldExit = processLine(scanner, line);
+        if (!shouldExit) {
+            replLoop(scanner);
+        }
+    }
+
+    private boolean processLine(Scanner scanner, String line) {
+        if (line.isBlank()) {
+            return false;
+        }
+        if (line.equalsIgnoreCase(".tree") || line.toLowerCase().startsWith(".tree ")) {
+            String initial = line.length() > 5 ? line.substring(5).trim() : "";
+            String query = readQuery(scanner, initial);
+            return handleCommand(".tree " + query);
+        }
+        if (line.startsWith(".")) {
+            return handleCommand(stripTrailingSemicolon(line));
+        }
+        String query = readQuery(scanner, line);
+        queryHandler.run(query);
+        return false;
+    }
+
+    public boolean handleCommand(String line) {
+        String[] parts = line.trim().split("\\s+", 2);
         String name = parts[0].toLowerCase();
-        String arg = parts.length > 1 ? parts[1] : null;
+        String arg = parts.length > 1 ? parts[1].trim() : null;
 
         ReplCommand command = commands.getOrDefault(
                 name, unused -> CommandOutcome.message("Unknown command: " + name));
