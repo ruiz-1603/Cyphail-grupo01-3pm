@@ -86,25 +86,34 @@ public final class CodeGen {
     /** Transpila el query para el grafo activo (el de .use). */
     public static GeneratedQuery generate(Query query, String graph) {
         rejectUpdates(query.updates());
+        var matchClause = query.match()
+                .orElseThrow(() -> new CodeGenException("A query without MATCH is not supported yet"));
+        var items = query.returnClause()
+                .orElseThrow(() -> new CodeGenException("A query without RETURN is not supported yet"))
+                .projection().items();
 
         var start = new State(graph, SymbolTable.empty(), List.of());
-        var matched = match(start, query.match());
+        var matched = match(start, matchClause);
         var filtered = where(matched, query.where());
-        var head = projection(filtered, query.returnClause().projection().items());
+        var head = projection(filtered, items);
 
         return new GeneratedQuery(
                 call(ROW_FUNCTOR, head.texts().toArray(String[]::new)),
                 head.state().goals(),
-                columns(query.returnClause().projection().items()),
+                columns(items),
                 head.state().symbols());
     }
 
 
     // match := "MATCH" patterns
+
     private static State match(State state, MatchClause match) {
         var current = state;
-        for (PatternNode node : match.patterns()) {
-            current = matchNode(current, node);
+        for (PatternElement element : match.patterns()) {
+            current = switch (element) {
+                case PatternNode node -> matchNode(current, node);
+                case PathPattern _ -> throw new CodeGenException("Relationship patterns are not supported yet");
+            };
         }
         return current;
     }
@@ -112,9 +121,11 @@ public final class CodeGen {
     // (a:L1:L2 {k: v}) -> nodo (si a es nueva), una etiqueta por label y un filtro por propiedad.
     // Si 'a' ya aparecio antes (variable de join) no se vuelve a pedir user_G_node.
     private static State matchNode(State state, PatternNode node) {
-        var isNew = state.symbols().variable(node.variable()).isEmpty();
-        var declared = state.withSymbols(state.symbols().withVariable(node.variable()));
-        var id = declared.id(node.variable());
+        var variable = node.variable()
+                .orElseThrow(() -> new CodeGenException("Anonymous nodes are not supported yet"));
+        var isNew = state.symbols().variable(variable).isEmpty();
+        var declared = state.withSymbols(state.symbols().withVariable(variable));
+        var id = declared.id(variable);
 
         var withNode = isNew ? declared.emit(declared.graphCall("node", id)) : declared;
         var withLabels = withNode.emitAll(node.labels().stream()
@@ -124,7 +135,7 @@ public final class CodeGen {
         var current = withLabels;
         for (PropertyEntry entry : node.properties()) {
             current = condition(current,
-                    new Binary(BinaryOp.EQ, new PropertyAccess(node.variable(), entry.key()), entry.value()));
+                    new Binary(BinaryOp.EQ, new PropertyAccess(variable, entry.key()), entry.value()));
         }
         return current;
     }
@@ -143,7 +154,9 @@ public final class CodeGen {
                 var r = term(l.state(), right);
                 yield r.state().emit(call(comparator(op), l.text(), r.text()));
             }
-            case PropertyAccess _, Var _, NumberLit _, StringLit _ ->
+            case And _, Or _, Not _ ->
+                    throw new CodeGenException("AND, OR and NOT are not supported yet: " + text(expr));
+            case PropertyAccess _, Var _, NumberLit _, DecimalLit _, StringLit _ ->
                     throw new CodeGenException("A condition must be a comparison: " + text(expr));
         };
     }
@@ -164,11 +177,12 @@ public final class CodeGen {
     private static Term term(State state, Expr expr) {
         return switch (expr) {
             case NumberLit(long value) -> new Term(state, Long.toString(value));
+            case DecimalLit(double value) -> new Term(state, Double.toString(value));
             case StringLit(String value) -> new Term(state, atom(value));
             case Var(String name) -> new Term(state, state.id(name));
             case PropertyAccess(String variable, String property) -> property(state, variable, property);
-            case Binary _ ->
-                    throw new CodeGenException("A comparison cannot be used as a value: " + text(expr));
+            case Binary _, And _, Or _, Not _ ->
+                    throw new CodeGenException("A condition cannot be used as a value: " + text(expr));
         };
     }
 
@@ -202,6 +216,8 @@ public final class CodeGen {
         updates.stream().findFirst().ifPresent(update -> {
             var clause = switch (update) {
                 case CreateClause _ -> "CREATE";
+                case SetClause _ -> "SET";
+                case RemoveClause _ -> "REMOVE";
                 case DeleteClause _ -> "DELETE";
             };
             throw new CodeGenException(clause + " is not supported in Sprint P2 (only MATCH, WHERE and RETURN)");
@@ -228,8 +244,12 @@ public final class CodeGen {
             case PropertyAccess(String variable, String property) -> variable + "." + property;
             case Var(String name) -> name;
             case NumberLit(long value) -> Long.toString(value);
+            case DecimalLit(double value) -> Double.toString(value);
             case StringLit(String value) -> value;
             case Binary(BinaryOp op, Expr left, Expr right) -> text(left) + " " + op.symbol() + " " + text(right);
+            case And(Expr left, Expr right) -> text(left) + " AND " + text(right);
+            case Or(Expr left, Expr right) -> text(left) + " OR " + text(right);
+            case Not(Expr operand) -> "NOT " + text(operand);
         };
     }
 }
