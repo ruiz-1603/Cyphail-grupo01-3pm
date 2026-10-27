@@ -21,7 +21,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * 
  * Tests para los 11 casos de prueba del Sprint P1.
  */
+
 class CyphailParserP1Test {
+
+    // En P2 un patron puede ser nodo o relacion; los casos P1 solo tienen nodos
+    private static PatternNode node(Query ast, int index) {
+        return (PatternNode) ast.match().orElseThrow().patterns().get(index);
+    }
 
     // ========== CASO 1 ==========
     @Test
@@ -36,8 +42,8 @@ class CyphailParserP1Test {
         assertFalse(result instanceof Fail, "C1: Should parse successfully");
         
         Query ast = ((Ok<InputString, Query, String>) result).token();
-        assertEquals(1, ast.match().patterns().size());
-        assertEquals("m", ast.match().patterns().get(0).variable());
+        assertEquals(1, ast.match().orElseThrow().patterns().size());
+        assertEquals("m", node(ast, 0).variable().orElseThrow());
         assertFalse(ast.where().isPresent());
         
         var validation = VariableValidator.validate(ast);
@@ -76,9 +82,9 @@ class CyphailParserP1Test {
 
         var result = CyphailParser.parse(query);
         assertFalse(result instanceof Fail, "C3: Should parse successfully");
-        
+
         Query ast = ((Ok<InputString, Query, String>) result).token();
-        var pattern = ast.match().patterns().get(0);
+        var pattern = node(ast, 0);
         assertEquals(2, pattern.labels().size(), "C3: Should have two labels");
         assertTrue(pattern.labels().contains("Person"));
         assertTrue(pattern.labels().contains("Employee"));
@@ -99,9 +105,9 @@ class CyphailParserP1Test {
 
         var result = CyphailParser.parse(query);
         assertFalse(result instanceof Fail, "C4: Should parse successfully");
-        
+
         Query ast = ((Ok<InputString, Query, String>) result).token();
-        assertEquals(2, ast.match().patterns().size(), "C4: Should have two patterns");
+        assertEquals(2, ast.match().orElseThrow().patterns().size(), "C4: Should have two patterns");
         
         var validation = VariableValidator.validate(ast);
         assertTrue(validation.isEmpty(), "C4: Should have no variable errors");
@@ -139,10 +145,10 @@ class CyphailParserP1Test {
 
         var result = CyphailParser.parse(query);
         assertFalse(result instanceof Fail, "C6: Should parse successfully");
-        
+
         Query ast = ((Ok<InputString, Query, String>) result).token();
-        var m = ast.match().patterns().get(0);
-        var p = ast.match().patterns().get(1);
+        var m = node(ast, 0);
+        var p = node(ast, 1);
         assertFalse(m.properties().isEmpty(), "C6: m should have properties");
         assertFalse(p.properties().isEmpty(), "C6: p should have properties");
         
@@ -183,9 +189,9 @@ class CyphailParserP1Test {
 
         var result = CyphailParser.parse(query);
         assertFalse(result instanceof Fail, "C8: Should parse successfully");
-        
+
         Query ast = ((Ok<InputString, Query, String>) result).token();
-        var oPattern = ast.match().patterns().get(1);
+        var oPattern = node(ast, 1);
         var personIdProp = oPattern.properties().stream()
             .filter(prop -> "personId".equals(prop.key()))
             .findFirst();
@@ -279,7 +285,8 @@ class CyphailParserP1Test {
         Query ast = ((Ok<InputString, Query, String>) result).token();
 
         // Verificar MATCH con multiples labels y propiedades
-        var cPattern = ast.match().patterns().get(0);
+        // Verificar MATCH con multiples labels y propiedades
+        var cPattern = node(ast, 0);
         assertEquals(2, cPattern.labels().size(), "C12: c should have 2 labels (Client, VIP)");
         assertFalse(cPattern.properties().isEmpty(), "C12: c should have property status");
 
