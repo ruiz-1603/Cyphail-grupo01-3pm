@@ -9,7 +9,8 @@
  * - Daniel Villarroel Abaduca
  * - Nicolas Zarate Hernandez
  */
-/* Runtime de consultas sobre SWI-Prolog
+
+/* Runtime de consultas
  *
  * Datos de cada grafo G:
  *   cy_db(G)                              el grafo existe
@@ -29,7 +30,7 @@ cy_db(empresa).
 cy_db(movies).
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Grafo actual (.use) %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%% grafo actual (.use)
 
 get_current_graph(G) :-
     current_graph(G).
@@ -40,7 +41,7 @@ set_current_graph(G) :-
     assert(current_graph(G)).
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Comparadores %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%% comparadores
 
 cy_eq(X, Y) :- number(X), number(Y), !, X =:= Y.
 cy_eq(X, Y) :- atom(X), atom(Y), X = Y.
@@ -57,7 +58,7 @@ cy_le(X, Y) :- number(X), number(Y), X =< Y.
 cy_ge(X, Y) :- number(X), number(Y), X >= Y.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Ciclo de queries %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%% ciclo de queries
 
 cy_create_query(QueryId, Clause) :-
     (QueryId = cy_q -> true ; true),
@@ -73,7 +74,7 @@ cy_erase_query(_QueryId) :-
     retractall(cy_query(_)).
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Formato de tabla %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%% formato de tabla
 
 cy_join_space([First | Rest], Text) :-
     format(atom(Init), '~w', [First]),
