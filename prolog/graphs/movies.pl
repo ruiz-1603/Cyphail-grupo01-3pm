@@ -1,4 +1,3 @@
-:- encoding(utf8).
 /*
  * Proyecto Cyphail
  * Grupo 01-3pm
@@ -8,16 +7,11 @@
  * - Aaron Ruiz Medina
  * - Samael Sanchez Mora
  * - Daniel Villarroel Abaduca
- * - Nicolás Zárate Hernández
+ * - Nicolas Zarate Hernandez
  */
+/* Grafo "movies" (casos P1: Movie con title/year, Person con name/age) */
 
-/** Grafo "movies" (casos P1: Movie con title/year, Person con name/age). */
-
-:- multifile cy_db/1.
-:- discontiguous user_movies_label/2, user_movies_prop/3.
 :- dynamic user_movies_node/1, user_movies_label/2, user_movies_prop/3, user_movies_edge/4.
-
-cy_db(movies).
 
 user_movies_node(m1). user_movies_node(m2). user_movies_node(m3).
 user_movies_node(a1). user_movies_node(a2).
