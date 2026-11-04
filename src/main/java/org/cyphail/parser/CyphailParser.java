@@ -13,6 +13,8 @@ import org.cyphail.parser.core.TokenString;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
 
 /*
  * Proyecto Cyphail
@@ -35,44 +37,300 @@ public final class CyphailParser {
      * No forman parte del AST.
      */
 
-    private record MatchWhere(List<PatternNode> patterns, Optional<WhereClause> where) {}
+    private record MatchWhere(List<PatternElement> patterns, Optional<WhereClause> where) {}
 
-    // node := "(" ID (":" ID)+ properties? ")"
+    // Contenido de "[ ... ]" de una relacion; con la direccion se vuelve un RelationshipPattern
+    private record RelDetail(Optional<String> variable, List<String> types, List<PropertyEntry> properties) {
 
-    static Parser<InputString, PatternNode, String> nodePattern() {
+        static final RelDetail EMPTY = new RelDetail(Optional.empty(), List.of(), List.of());
 
-        var label = Parsers.TFlat(Parsers.Seq(Lexers.Symbol(":"), Lexers.Id()), tokens -> tokens.get(1));
-        var beginning = Parsers.Seq(Lexers.Symbol("("), Lexers.Id(), label);
+        RelationshipPattern withDirection(Direction direction) {
+            return new RelationshipPattern(variable, types, properties, direction);
+        }
+    }
 
-        Parser<InputString, List<PropertyEntry>, String> optionalProperties =
-                source -> {String remaining = source.input().substring(source.index()).stripLeading();
-                    if (remaining.startsWith("{")) {return properties().parse(source);}
-                    return new Ok<>(List.of(), source);
-                };
+    // Un operador de comparacion con su operando derecho: "> 2010"
+    private record Comparison(BinaryOp op, Expr right) {}
+
+    // clause? para clausulas que empiezan con palabra clave (MATCH, WHERE, RETURN):
+    // si la palabra esta, la clausula debe estar bien formada (se reporta su error);
+    // si no esta, no hay clausula y no se consume nada
+    private static <T> Parser<InputString, Optional<T>, String> optionalClause(String keyword, Parser<InputString, T, String> clause) {
+        return source -> switch (Lexers.Keyword(keyword).parse(source)) {
+            case Fail(String reason) -> new Ok<>(Optional.empty(), source);
+            case Ok(TokenString token, InputString rest) -> switch (clause.parse(source)) {
+                case Fail(String reason) -> new Fail<>(reason);
+                case Ok(T value, InputString next) -> new Ok<>(Optional.of(value), next);
+            };
+        };
+    }
+
+    // (separator item)*  : como Star, pero si aparece el separador ("," "AND" "OR" ">" ...)
+    // el item que sigue es obligatorio y su error se reporta (no se retrocede en silencio)
+    private static <S, T> Parser<InputString, List<T>, String> repeatAfter(
+            Parser<InputString, S, String> separator, Function<S, Parser<InputString, T, String>> item) {
 
         return source -> {
-            switch (beginning.parse(source)) {
-                case Fail(String reason) -> {return new Fail<>(reason);}
-                case Ok(List<TokenString> tokens, InputString rest) -> {
+            switch (separator.parse(source)) {
+                case Fail(String reason) -> {return new Ok<>(List.of(), source);}
+                case Ok(S found, InputString rest) -> {
 
-                    switch (Parsers.Star(label).parse(rest)) {
+                    switch (item.apply(found).parse(rest)) {
                         case Fail(String reason) -> {return new Fail<>(reason);}
-                        case Ok(List<TokenString> otherLabels, InputString remaining) -> {
+                        case Ok(T first, InputString remaining) -> {
 
-                            switch (optionalProperties.parse(remaining)) {
+                            switch (repeatAfter(separator, item).parse(remaining)) {
                                 case Fail(String reason) -> {return new Fail<>(reason);}
-                                case Ok(List<PropertyEntry> props, InputString next) -> {
+                                case Ok(List<T> others, InputString finalRest) -> {
+                                    var items = new ArrayList<T>();
+                                    items.add(first);
+                                    items.addAll(others);
+                                    return new Ok<>(List.copyOf(items), finalRest);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
 
-                                    switch (Lexers.Symbol(")").parse(next)) {
+    // list := item ("," item)*
+    private static <T> Parser<InputString, List<T>, String> commaList(Parser<InputString, T, String> item) {
+
+        var remainingItems = repeatAfter(Lexers.Symbol(","), comma -> item);
+
+        return source -> {
+            switch (item.parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(T first, InputString rest) -> {
+
+                    switch (remainingItems.parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(List<T> remaining, InputString finalRest) -> {
+                            var items = new ArrayList<T>();
+                            items.add(first);
+                            items.addAll(remaining);
+                            return new Ok<>(List.copyOf(items), finalRest);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // variable := ID   (opcional en nodos y relaciones)
+    static Parser<InputString, Optional<String>, String> optionalVariable() {
+
+        Parser<InputString, Optional<String>, String> variable = source -> switch (Lexers.Id().parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(TokenString token, InputString rest) -> new Ok<>(Optional.of(token.value()), rest);
+        };
+
+        return Parsers.RFlat(Parsers.Or(variable, source -> new Ok<>(Optional.empty(), source)),
+                reasons -> String.join(", ", reasons));
+    }
+
+    // nodeLabels := (":" labelName)*
+    static Parser<InputString, List<String>, String> nodeLabels() {
+
+        var label = Parsers.TFlat(Parsers.Seq(Lexers.Symbol(":"), Lexers.Id()), tokens -> tokens.get(1));
+
+        return source -> switch (Parsers.Star(label).parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(List<TokenString> tokens, InputString rest) ->
+                    new Ok<>(tokens.stream().map(TokenString::value).toList(), rest);
+        };
+    }
+
+    // properties? : si viene "{" el mapa debe estar bien formado; si no, no hay propiedades
+    static Parser<InputString, List<PropertyEntry>, String> optionalProperties() {
+
+        return source -> switch (Lexers.Symbol("{").parse(source)) {
+            case Ok(TokenString open, InputString rest) -> properties().parse(source);
+            case Fail(String reason) -> new Ok<>(List.of(), source);
+        };
+    }
+
+    // node := "(" variable? nodeLabels? properties? ")"
+    static Parser<InputString, PatternNode, String> nodePattern() {
+
+        return source -> {
+            switch (Lexers.Symbol("(").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString open, InputString rest) -> {
+
+                    switch (optionalVariable().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(Optional<String> variable, InputString afterVariable) -> {
+
+                            switch (nodeLabels().parse(afterVariable)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(List<String> labels, InputString afterLabels) -> {
+
+                                    switch (optionalProperties().parse(afterLabels)) {
                                         case Fail(String reason) -> {return new Fail<>(reason);}
-                                        case Ok(TokenString close, InputString finalRest) -> {
+                                        case Ok(List<PropertyEntry> props, InputString next) -> {
 
-                                            var labels = new ArrayList<String>();
-                                            labels.add(tokens.get(2).value());
-                                            for (var token : otherLabels) {labels.add(token.value());}
-                                            return new Ok<>(new PatternNode(tokens.get(1).value(), List.copyOf(labels), props), finalRest);
+                                            switch (Lexers.Symbol(")").parse(next)) {
+                                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                                case Ok(TokenString close, InputString finalRest) -> {
+                                                    return new Ok<>(new PatternNode(variable, labels, props), finalRest);
+                                                }
+                                            }
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // relTypes := (":" relTypeName)?   (un solo tipo; los tipos alternativos "|" estan fuera de P2)
+    static Parser<InputString, List<String>, String> relTypes() {
+
+        var type = Parsers.TFlat(Parsers.Seq(Lexers.Symbol(":"), Lexers.Id()), tokens -> tokens.get(1));
+
+        Parser<InputString, List<String>, String> oneType = source -> switch (type.parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(TokenString token, InputString rest) -> new Ok<>(List.of(token.value()), rest);
+        };
+
+        return Parsers.RFlat(Parsers.Or(oneType, source -> new Ok<>(List.of(), source)),
+                reasons -> String.join(", ", reasons));
+    }
+
+    // relationshipDetail := "[" variable? relTypes? relProperties? "]"
+    static Parser<InputString, RelDetail, String> relationshipDetail() {
+
+        return source -> {
+            switch (Lexers.Symbol("[").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString open, InputString rest) -> {
+
+                    switch (optionalVariable().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(Optional<String> variable, InputString afterVariable) -> {
+
+                            switch (relTypes().parse(afterVariable)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(List<String> types, InputString afterTypes) -> {
+
+                                    switch (optionalProperties().parse(afterTypes)) {
+                                        case Fail(String reason) -> {return new Fail<>(reason);}
+                                        case Ok(List<PropertyEntry> props, InputString next) -> {
+
+                                            switch (Lexers.Symbol("]").parse(next)) {
+                                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                                case Ok(TokenString close, InputString finalRest) -> {
+                                                    return new Ok<>(new RelDetail(variable, types, props), finalRest);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // relationshipDetail? : si viene "[" el detalle debe estar bien formado
+    static Parser<InputString, RelDetail, String> optionalRelationshipDetail() {
+
+        return source -> switch (Lexers.Symbol("[").parse(source)) {
+            case Ok(TokenString open, InputString rest) -> relationshipDetail().parse(source);
+            case Fail(String reason) -> new Ok<>(RelDetail.EMPTY, source);
+        };
+    }
+
+    // Final de una relacion que empezo con "-":  "->" es OUT, "-" es NONE ("->" se prueba primero)
+    static Parser<InputString, Direction, String> arrowEnd() {
+
+        Parser<InputString, Direction, String> out = source -> switch (Lexers.Symbol("->").parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(TokenString arrow, InputString rest) -> new Ok<>(Direction.OUT, rest);
+        };
+
+        Parser<InputString, Direction, String> none = source -> switch (Lexers.Symbol("-").parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(TokenString dash, InputString rest) -> new Ok<>(Direction.NONE, rest);
+        };
+
+        return Parsers.RFlat(Parsers.Or(out, none), reasons -> String.join(", ", reasons));
+    }
+
+    // relationshipPattern := "<-" relationshipDetail? "-"
+    //                      | "-" relationshipDetail? ("->" | "-")
+    static Parser<InputString, RelationshipPattern, String> relationshipPattern() {
+
+        Parser<InputString, RelationshipPattern, String> incoming = source -> {
+            switch (Lexers.Symbol("<-").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString arrow, InputString rest) -> {
+
+                    switch (optionalRelationshipDetail().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(RelDetail detail, InputString remaining) -> {
+
+                            switch (Lexers.Symbol("-").parse(remaining)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(TokenString dash, InputString finalRest) -> {
+                                    return new Ok<>(detail.withDirection(Direction.IN), finalRest);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Parser<InputString, RelationshipPattern, String> outgoingOrUndirected = source -> {
+            switch (Lexers.Symbol("-").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString dash, InputString rest) -> {
+
+                    switch (optionalRelationshipDetail().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(RelDetail detail, InputString remaining) -> {
+
+                            switch (arrowEnd().parse(remaining)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(Direction direction, InputString finalRest) -> {
+                                    return new Ok<>(detail.withDirection(direction), finalRest);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        return Parsers.RFlat(Parsers.Or(incoming, outgoingOrUndirected), reasons -> String.join(", ", reasons));
+    }
+
+    // patternElement := node (relationshipPattern node)?
+    // (un solo arco por patron: los patrones encadenados estan fuera de P2)
+    static Parser<InputString, PatternElement, String> patternElement() {
+
+        return source -> {
+            switch (nodePattern().parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(PatternNode left, InputString rest) -> {
+
+                    switch (relationshipPattern().parse(rest)) {
+                        case Fail(String reason) -> {return new Ok<>(left, rest);} // patron de un solo nodo
+                        case Ok(RelationshipPattern relationship, InputString remaining) -> {
+
+                            switch (nodePattern().parse(remaining)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(PatternNode right, InputString finalRest) -> {
+                                    return new Ok<>(new PathPattern(left, relationship, right), finalRest);
                                 }
                             }
                         }
@@ -120,9 +378,34 @@ public final class CyphailParser {
         };
     }
 
-    // simpleExpr := property | number | string
+    // decimal := DECIMAL
+    static Parser<InputString, Expr, String> decimal() {
+
+        return (InputString source) -> {
+            return switch (Lexers.Decimal().parse(source)) {
+                case Fail(String reason) -> new Fail<InputString, Expr, String>(reason);
+                case Ok(TokenString token, InputString rest) ->
+                        new Ok<InputString, Expr, String>(new DecimalLit(Double.parseDouble(token.value())), rest);
+            };
+        };
+    }
+
+    // booleanLiteral := "TRUE" | "FALSE"
+    static Parser<InputString, Expr, String> booleanExpr() {
+
+        return (InputString source) -> {
+            return switch (Lexers.BooleanLiteral().parse(source)) {
+                case Fail(String reason) -> new Fail<InputString, Expr, String>(reason);
+                case Ok(TokenString token, InputString rest) ->
+                        new Ok<InputString, Expr, String>(new BoolLit(Boolean.parseBoolean(token.value())), rest);
+            };
+        };
+    }
+
+    // simpleExpr := property | decimal | number | string | boolean
+    // (decimal antes que number: si no, "25.5" se leeria como 25 y quedaria ".5")
     static Parser<InputString, Expr, String> simpleExpr() {
-        return Parsers.RFlat(Parsers.Or(property(),number(),stringExpr()),
+        return Parsers.RFlat(Parsers.Or(property(), decimal(), number(), stringExpr(), booleanExpr()),
                 reasons -> String.join(", ", reasons)
         );
     }
@@ -196,32 +479,9 @@ public final class CyphailParser {
         };
     }
 
-    // patterns := node ("," node)*
-    static Parser<InputString, List<PatternNode>, String> pattern() {
-
-        Parser<InputString, PatternNode, String> patternWithComma =
-                source -> switch (Lexers.Symbol(",").parse(source)) {
-                    case Fail(String reason) -> new Fail<>(reason);
-                    case Ok(TokenString comma, InputString rest) -> nodePattern().parse(rest);};
-
-        var remainingPatterns = Parsers.Star(patternWithComma);
-
-        return source -> {switch (nodePattern().parse(source)) {
-                case Fail(String reason) -> {return new Fail<>(reason);}
-                case Ok(PatternNode first, InputString rest) -> {
-
-                    switch (remainingPatterns.parse(rest)) {
-                        case Fail(String reason) -> {return new Fail<>(reason);}
-                        case Ok(List<PatternNode> remaining, InputString finalRest) -> {
-                            var patterns = new ArrayList<PatternNode>();
-                            patterns.add(first);
-                            patterns.addAll(remaining);
-                            return new Ok<>(List.copyOf(patterns), finalRest);
-                        }
-                    }
-                }
-            }
-        };
+    // pattern := patternElement ("," patternElement)*
+    static Parser<InputString, List<PatternElement>, String> pattern() {
+        return commaList(patternElement());
     }
 
     // alias := ("AS" ID)?
@@ -336,22 +596,55 @@ public final class CyphailParser {
         };
     }
 
-    // comparison := simpleExpr comparisonOp simpleExpr
+    // atom := "(" expression ")" | simpleExpr | variable
+    static Parser<InputString, Expr, String> atom() {
+
+        // expression() se pide dentro del lambda (al parsear), no al construir: la gramatica es recursiva
+        Parser<InputString, Expr, String> parenthesized = source -> {
+            switch (Lexers.Symbol("(").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString open, InputString rest) -> {
+
+                    switch (expression().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(Expr inner, InputString remaining) -> {
+
+                            switch (Lexers.Symbol(")").parse(remaining)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(TokenString close, InputString finalRest) -> {return new Ok<>(inner, finalRest);}
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        return Parsers.RFlat(Parsers.Or(parenthesized, simpleExpr(), variableExpr()),
+                reasons -> String.join(", ", reasons));
+    }
+
+    // comparison := atom (comparisonOp atom)*   ->  a < b < c se agrupa a la izquierda
     static Parser<InputString, Expr, String> comparisonExpression() {
 
+        // si aparece el operador, el operando derecho es obligatorio
+        Function<BinaryOp, Parser<InputString, Comparison, String>> operand = op -> source -> switch (atom().parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(Expr right, InputString rest) -> new Ok<>(new Comparison(op, right), rest);
+        };
+
+        var comparisons = repeatAfter(comparisonOperator(), operand);
+
         return source -> {
-            switch (simpleExpr().parse(source)) {
+            switch (atom().parse(source)) {
                 case Fail(String reason) -> {return new Fail<>(reason);}
                 case Ok(Expr left, InputString rest) -> {
 
-                    switch (comparisonOperator().parse(rest)) {
+                    switch (comparisons.parse(rest)) {
                         case Fail(String reason) -> {return new Fail<>(reason);}
-                        case Ok(BinaryOp op, InputString remaining) -> {
-
-                            switch (simpleExpr().parse(remaining)) {
-                                case Fail(String reason) -> {return new Fail<>(reason);}
-                                case Ok(Expr right, InputString finalRest) -> {return new Ok<>(new Binary(op, left, right), finalRest);}
-                            }
+                        case Ok(List<Comparison> others, InputString finalRest) -> {
+                            Expr result = others.stream()
+                                    .reduce(left, (acc, c) -> new Binary(c.op(), acc, c.right()), (a, b) -> b);
+                            return new Ok<>(result, finalRest);
                         }
                     }
                 }
@@ -359,7 +652,67 @@ public final class CyphailParser {
         };
     }
 
-    // where := "WHERE" comparison
+    // notExpression := "NOT"* comparison
+    static Parser<InputString, Expr, String> notExpression() {
+
+        var nots = Parsers.Star(Lexers.Keyword("NOT"));
+
+        return source -> {
+            switch (nots.parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(List<TokenString> tokens, InputString rest) -> {
+
+                    switch (comparisonExpression().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(Expr operand, InputString finalRest) -> {
+                            Expr result = tokens.stream().reduce(operand, (acc, not) -> new Not(acc), (a, b) -> b);
+                            return new Ok<>(result, finalRest);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // Reconoce  operand (keyword operand)*  y agrupa a la izquierda: a OR b OR c = (a OR b) OR c
+    private static Parser<InputString, Expr, String> leftAssociative(
+            String keyword, Parser<InputString, Expr, String> operand, BinaryOperator<Expr> combine) {
+
+        // si aparece la palabra clave, el operando que sigue es obligatorio
+        var others = repeatAfter(Lexers.Keyword(keyword), token -> operand);
+
+        return source -> {
+            switch (operand.parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(Expr first, InputString rest) -> {
+
+                    switch (others.parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(List<Expr> remaining, InputString finalRest) -> {
+                            return new Ok<>(remaining.stream().reduce(first, combine, (a, b) -> b), finalRest);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // andExpression := notExpression ("AND" notExpression)*
+    static Parser<InputString, Expr, String> andExpression() {
+        return leftAssociative("AND", notExpression(), And::new);
+    }
+
+    // orExpression := andExpression ("OR" andExpression)*
+    static Parser<InputString, Expr, String> orExpression() {
+        return leftAssociative("OR", andExpression(), Or::new);
+    }
+
+    // expression := orExpression   (precedencia: NOT > AND > OR)
+    static Parser<InputString, Expr, String> expression() {
+        return orExpression();
+    }
+
+    // where := "WHERE" expression
 
     static Parser<InputString, WhereClause, String> whereClause() {
 
@@ -367,7 +720,7 @@ public final class CyphailParser {
                 case Fail(String reason) -> {return new Fail<>(reason);}
                 case Ok(TokenString token, InputString rest) -> {
 
-                    switch (comparisonExpression().parse(rest)) {
+                    switch (expression().parse(rest)) {
                         case Fail(String reason) -> {return new Fail<>(reason);}
                         case Ok(Expr expr, InputString finalRest) -> {return new Ok<>(new WhereClause(expr), finalRest);}
                     }
@@ -376,7 +729,7 @@ public final class CyphailParser {
         };
     }
 
-    // create := "CREATE" patterns
+    // create := "CREATE" pattern
     static Parser<InputString, UpdateClause, String> createClause() {
 
         return source -> {
@@ -386,7 +739,7 @@ public final class CyphailParser {
 
                     switch (pattern().parse(rest)) {
                         case Fail(String reason) -> {return new Fail<>(reason);}
-                        case Ok(List<PatternNode> patterns, InputString finalRest) -> {return new Ok<>(new CreateClause(patterns), finalRest);}
+                        case Ok(List<PatternElement> patterns, InputString finalRest) -> {return new Ok<>(new CreateClause(patterns), finalRest);}
                     }
                 }
             }
@@ -443,18 +796,154 @@ public final class CyphailParser {
         };
     }
 
-    // update := create | delete
+    // setItem := property "=" expression     # SetProperty
+    //          | variable nodeLabels          # SetLabels
+    static Parser<InputString, SetItem, String> setItem() {
+
+        Parser<InputString, SetItem, String> setProperty = source -> {
+            switch (property().parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(Expr target, InputString rest) -> {
+
+                    switch (Lexers.Symbol("=").parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(TokenString equals, InputString remaining) -> {
+
+                            switch (expression().parse(remaining)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(Expr value, InputString finalRest) -> {
+                                    return new Ok<>(new SetProperty((PropertyAccess) target, value), finalRest);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Parser<InputString, SetItem, String> setLabels = source -> switch (variableWithLabels().parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(SetLabels labels, InputString rest) -> new Ok<>(labels, rest);
+        };
+
+        return Parsers.RFlat(Parsers.Or(setProperty, setLabels), reasons -> String.join(", ", reasons));
+    }
+
+    // variable nodeLabels   (al menos una etiqueta), p.ej. p:Vip:Activo
+    static Parser<InputString, SetLabels, String> variableWithLabels() {
+
+        return source -> {
+            switch (Lexers.Id().parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString variable, InputString rest) -> {
+
+                    switch (nodeLabels().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(List<String> labels, InputString finalRest) -> {
+                            if (labels.isEmpty()) {
+                                return new Fail<>("Expected ':' at position " + rest.index());
+                            }
+                            return new Ok<>(new SetLabels(variable.value(), labels), finalRest);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // set := "SET" setItem ("," setItem)*
+    static Parser<InputString, UpdateClause, String> setClause() {
+
+        return source -> {
+            switch (Lexers.Keyword("SET").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString token, InputString rest) -> {
+
+                    switch (commaList(setItem()).parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(List<SetItem> items, InputString finalRest) -> {return new Ok<>(new SetClause(items), finalRest);}
+                    }
+                }
+            }
+        };
+    }
+
+    // removeItem := variable nodeLabels   # RemoveLabels
+    //             | property              # RemoveProperty
+    static Parser<InputString, RemoveItem, String> removeItem() {
+
+        Parser<InputString, RemoveItem, String> removeLabels = source -> switch (variableWithLabels().parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(SetLabels labels, InputString rest) ->
+                    new Ok<>(new RemoveLabels(labels.variable(), labels.labels()), rest);
+        };
+
+        Parser<InputString, RemoveItem, String> removeProperty = source -> switch (property().parse(source)) {
+            case Fail(String reason) -> new Fail<>(reason);
+            case Ok(Expr target, InputString rest) -> new Ok<>(new RemoveProperty((PropertyAccess) target), rest);
+        };
+
+        return Parsers.RFlat(Parsers.Or(removeLabels, removeProperty), reasons -> String.join(", ", reasons));
+    }
+
+    // remove := "REMOVE" removeItem ("," removeItem)*
+    static Parser<InputString, UpdateClause, String> removeClause() {
+
+        return source -> {
+            switch (Lexers.Keyword("REMOVE").parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(TokenString token, InputString rest) -> {
+
+                    switch (commaList(removeItem()).parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(List<RemoveItem> items, InputString finalRest) -> {return new Ok<>(new RemoveClause(items), finalRest);}
+                    }
+                }
+            }
+        };
+    }
+
+    // update := create | set | delete | remove
     static Parser<InputString, UpdateClause, String> updatingClause() {
         return Parsers.RFlat(
-                Parsers.Or(createClause(), deleteClause()),
+                Parsers.Or(createClause(), setClause(), deleteClause(), removeClause()),
                 reasons -> String.join(", ", reasons));
     }
 
-    // updates := update*
-    static Parser<InputString, List<UpdateClause>, String> updates() {
-        return Parsers.Star(updatingClause());
+    // Una clausula de actualizacion empieza con una de estas palabras clave
+    private static boolean startsUpdate(InputString source) {
+        var keyword = Parsers.Or(Lexers.Keyword("CREATE"), Lexers.Keyword("SET"),
+                Lexers.Keyword("DELETE"), Lexers.Keyword("REMOVE"));
+        return keyword.parse(source) instanceof Ok;
     }
 
+    // updates := update*
+    // Si la palabra clave esta, la clausula debe estar bien formada (asi se reporta su error)
+    static Parser<InputString, List<UpdateClause>, String> updates() {
+
+        return source -> {
+            if (!startsUpdate(source)) {
+                return new Ok<>(List.of(), source);
+            }
+            switch (updatingClause().parse(source)) {
+                case Fail(String reason) -> {return new Fail<>(reason);}
+                case Ok(UpdateClause first, InputString rest) -> {
+
+                    switch (updates().parse(rest)) {
+                        case Fail(String reason) -> {return new Fail<>(reason);}
+                        case Ok(List<UpdateClause> others, InputString finalRest) -> {
+                            var all = new ArrayList<UpdateClause>();
+                            all.add(first);
+                            all.addAll(others);
+                            return new Ok<>(List.copyOf(all), finalRest);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    // return := "RETURN" items
     static Parser<InputString, List<ProjectionItem>, String> returnClause() {
 
         return source -> {
@@ -465,6 +954,7 @@ public final class CyphailParser {
         };
     }
 
+    // match := "MATCH" pattern where?
     static Parser<InputString, MatchWhere, String> matchClause() {
 
         return source -> {
@@ -474,17 +964,14 @@ public final class CyphailParser {
 
                     switch (pattern().parse(rest)) {
                         case Fail(String reason) -> {return new Fail<>(reason);}
-                        case Ok(List<PatternNode> patterns, InputString remaining) -> {
+                        case Ok(List<PatternElement> patterns, InputString remaining) -> {
 
-                            Optional<WhereClause> where = Optional.empty();
-                            InputString finalRest = remaining;
-
-                            switch (whereClause().parse(remaining)) {
-                                case Fail(String reason) -> {// WHERE es opcional
+                            switch (optionalClause("WHERE", whereClause()).parse(remaining)) {
+                                case Fail(String reason) -> {return new Fail<>(reason);}
+                                case Ok(Optional<WhereClause> where, InputString finalRest) -> {
+                                    return new Ok<>(new MatchWhere(patterns, where), finalRest);
                                 }
-                                case Ok(WhereClause clause, InputString next) -> {where = Optional.of(clause);finalRest = next;}
                             }
-                            return new Ok<>(new MatchWhere(patterns, where), finalRest);
                         }
                     }
                 }
@@ -492,29 +979,36 @@ public final class CyphailParser {
         };
     }
 
+    // readingClause := match
     static Parser<InputString, MatchWhere, String> readingClause() {
         return matchClause();
     }
 
+    // singlePartQuery := readingClause? updatingClause* returnClause?
+    // (el AST de P2 tiene un solo MATCH; un query debe traer al menos una clausula)
     static Parser<InputString, Query, String> singlePartQuery() {
 
         return source -> {
-            switch (readingClause().parse(source)) {
+            switch (optionalClause("MATCH", readingClause()).parse(source)) {
                 case Fail(String reason) -> {return new Fail<>(reason);}
-                case Ok(MatchWhere mw, InputString rest) -> {
+                case Ok(Optional<MatchWhere> mw, InputString rest) -> {
 
                     switch (updates().parse(rest)) {
                         case Fail(String reason) -> {return new Fail<>(reason);}
                         case Ok(List<UpdateClause> updates, InputString remaining) -> {
 
-                            switch (returnClause().parse(remaining)) {
+                            switch (optionalClause("RETURN", returnClause()).parse(remaining)) {
                                 case Fail(String reason) -> {return new Fail<>(reason);}
-                                case Ok(List<ProjectionItem> items, InputString finalRest) -> {
+                                case Ok(Optional<List<ProjectionItem>> items, InputString finalRest) -> {
 
+                                    if (mw.isEmpty() && updates.isEmpty() && items.isEmpty()) {
+                                        return new Fail<>("Expected 'MATCH', 'CREATE' or 'RETURN' at position " + source.index());
+                                    }
                                     Query query = new Query(
-                                            new MatchClause(mw.patterns()),
-                                            mw.where(), updates,
-                                            new ReturnClause(new Projection(items, List.of())));
+                                            mw.map(m -> new MatchClause(m.patterns())),
+                                            mw.flatMap(MatchWhere::where),
+                                            updates,
+                                            items.map(list -> new ReturnClause(new Projection(list, List.of()))));
                                     return new Ok<>(query, finalRest);
                                 }
                             }
@@ -533,7 +1027,7 @@ public final class CyphailParser {
         return singleQuery();
     }
 
-    // query := MATCH patterns where? updates* RETURN items EOF
+    // cyphail := regularQuery EOF
     static Parser<InputString, Query, String> cyphail() {
 
         return source -> {

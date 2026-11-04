@@ -89,12 +89,57 @@ class PrologEngineAndReplP2Test {
     }
 
     @Test
+    void tableMatrixKeepsValuesWithSpacesInOneColumn() {
+        String[][] table = PrologEngine.toTableMatrix(
+                "m.title\tyear\nThe Matrix\t1999\nWar and Peace\t", List.of("m.title", "year"));
+
+        assertArrayEquals(new String[]{"m.title", "year"}, table[0]);
+        assertArrayEquals(new String[]{"The Matrix", "1999"}, table[1]);
+        assertArrayEquals(new String[]{"War and Peace", ""}, table[2]);
+    }
+
+    @Test
+    void p1CasesRunOnTheP1Graph() {
+        try (PrologEngine engine = new PrologEngine()) {
+            assertTrue(engine.listAvailableGraphs().contains("p1"));
+            engine.setCurrentGraph("p1");
+
+            // CASO 1: titulos con espacios en una sola columna
+            String caso1 = engine.execute("MATCH (m:Movie) RETURN m.title, m.year AS year");
+            assertTrue(caso1.contains("The Matrix"));
+            assertTrue(caso1.contains("(4 row(s))"));
+
+            // CASO 2
+            String caso2 = engine.execute("MATCH (b:Book) WHERE b.pages < 300 RETURN b.title, b.pages AS totalPages");
+            assertTrue(caso2.contains("The Great Gatsby"));
+            assertTrue(caso2.contains("(1 row(s))"));
+
+            // CASO 3: etiquetas multiples + propiedad
+            String caso3 = engine.execute(
+                    "MATCH (a:Person:Employee {id: 1}) WHERE a.age > 30 RETURN a.name AS name, a.age AS age");
+            assertTrue(caso3.contains("Priscilla"));
+            assertTrue(caso3.contains("(1 row(s))"));
+
+            // CASO 8: propiedad que referencia otra variable (personId: p.id)
+            String caso8 = engine.execute(
+                    "MATCH (p:Person {id: 1}), (o:Order {personId: p.id}) RETURN p.name AS name, o.total AS total");
+            assertTrue(caso8.contains("Priscilla"));
+            assertTrue(caso8.contains("50000"));
+
+            // CASO 7: CREATE queda fuera de la ejecucion en P2
+            String caso7 = engine.execute("MATCH (p:Person) WHERE p.age > 18 "
+                    + "CREATE (c:Certificate {issuedTo: \"adult\", year: 2026}) RETURN p.name AS name, p.age AS age");
+            assertEquals("ERROR: CREATE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)", caso7);
+        }
+    }
+
+    @Test
     void prologEngineReportsErrorForUnknownGraphOrMissingFile() {
         try (PrologEngine engine = new PrologEngine()) {
             Map<String, ReplCommand> commands = CommandRegistry.forEngine(engine);
 
             CommandOutcome badUse = commands.get(".use").execute("nonexistent_graph");
-            assertTrue(badUse.message().startsWith("ERROR:"));
+            assertEquals("ERROR: Graph 'nonexistent_graph' not found.", badUse.message());
 
             CommandOutcome badLoad = commands.get(".load").execute("\"data/does_not_exist.cyphail\"");
             assertTrue(badLoad.message().startsWith("ERROR:"));

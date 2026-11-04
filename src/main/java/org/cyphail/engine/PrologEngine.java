@@ -19,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.ConnectException;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -26,6 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+
+import static org.cyphail.util.Statements.stripTrailingSemicolon;
 
 /*
  * Proyecto Cyphail
@@ -48,6 +51,9 @@ public class PrologEngine implements Engine {
 
     private static final String DEFAULT_ENGINE_SCRIPT = "prolog/engine.pl";
     private static final String LOCALHOST = "127.0.0.1";
+    // swipl escribe el puerto un instante antes de quedar escuchando: se reintenta la conexion
+    private static final int CONNECT_ATTEMPTS = 20;
+    private static final long CONNECT_WAIT_MS = 100;
 
     private final String engineScriptPath;
     private Process prologProcess;
@@ -90,12 +96,30 @@ public class PrologEngine implements Engine {
         int port = Integer.parseInt(portLine.trim());
         String password = passwordLine.trim();
 
-        this.socket = new Socket(LOCALHOST, port);
+        this.socket = connect(port, CONNECT_ATTEMPTS);
         this.mqiClient = new MqiClient(
                 new BufferedInputStream(socket.getInputStream()),
                 socket.getOutputStream()
         );
         this.mqiClient.authenticate(password);
+    }
+
+    // Abre el socket con el servidor MQI; si aun no escucha (Connection refused) espera y reintenta
+    private static Socket connect(int port, int attemptsLeft) throws IOException {
+        try {
+            return new Socket(LOCALHOST, port);
+        } catch (ConnectException e) {
+            if (attemptsLeft <= 1) {
+                throw e;
+            }
+            try {
+                Thread.sleep(CONNECT_WAIT_MS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw e;
+            }
+            return connect(port, attemptsLeft - 1);
+        }
     }
 
     /** Executes a raw Prolog goal over MQI and returns the parsed {@link PrologResult}. */
@@ -205,7 +229,14 @@ public class PrologEngine implements Engine {
         return raw != null ? raw.toString() : "";
     }
 
-    /** Converts the newline/space-delimited {@code Rows} string from {@code cy_engine.pl} into a 2D table matrix. */
+    // Separador de columnas del texto Rows (ver cy_join_columns en cy_engine.pl)
+    static final String COLUMN_SEPARATOR = "\t";
+
+    /**
+     * Converts the {@code Rows} string from {@code cy_engine.pl} into a 2D table matrix.
+     * Rows are separated by a line break and columns by a tab, so a value with spaces
+     * ('The Matrix') stays in a single column.
+     */
     public static String[][] toTableMatrix(String rowsText, List<String> columns) {
         String[] header = columns.toArray(String[]::new);
         if (rowsText == null || rowsText.isBlank()) {
@@ -223,23 +254,10 @@ public class PrologEngine implements Engine {
     }
 
     private static String[] splitRowCells(String line, int columnCount) {
-        if (columnCount <= 1) {
-            return new String[]{line.trim()};
-        }
-        String[] parts = line.trim().split("\\s+", columnCount);
+        String[] parts = line.split(COLUMN_SEPARATOR, columnCount);
         return IntStream.range(0, columnCount)
                 .mapToObj(i -> i < parts.length ? parts[i] : "")
                 .toArray(String[]::new);
-    }
-
-    private static String stripTrailingSemicolon(String input) {
-        if (input == null) {
-            return "";
-        }
-        String trimmed = input.stripTrailing();
-        return trimmed.endsWith(";")
-                ? trimmed.substring(0, trimmed.length() - 1).stripTrailing()
-                : trimmed;
     }
 
     @Override

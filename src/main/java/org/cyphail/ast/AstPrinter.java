@@ -185,6 +185,7 @@ public final class AstPrinter {
             case NumberLit(long v) -> String.valueOf(v);
             case DecimalLit(double v) -> String.valueOf(v);
             case StringLit(String v) -> "\"" + v + "\"";
+            case BoolLit(boolean v) -> String.valueOf(v);
         };
     }
 }

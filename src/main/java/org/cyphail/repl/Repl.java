@@ -3,6 +3,8 @@ package org.cyphail.repl;
 import org.cyphail.engine.Engine;
 import org.cyphail.util.IO;
 
+import static org.cyphail.util.Statements.stripTrailingSemicolon;
+
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -65,16 +67,6 @@ public class Repl {
                 ? nextLine.trim()
                 : current + "\n" + nextLine;
         return readQuery(scanner, combined);
-    }
-
-    public static String stripTrailingSemicolon(String text) {
-        if (text == null) {
-            return "";
-        }
-        String trimmed = text.stripTrailing();
-        return trimmed.endsWith(";")
-                ? trimmed.substring(0, trimmed.length() - 1).stripTrailing()
-                : trimmed;
     }
 
     private void replLoop(Scanner scanner) {

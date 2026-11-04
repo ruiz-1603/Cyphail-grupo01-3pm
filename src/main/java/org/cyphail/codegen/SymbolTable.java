@@ -71,6 +71,22 @@ public record SymbolTable(Map<String, String> variables,
         return new SymbolTable(variables, put(properties, key, prologName), add(used, prologName));
     }
 
+    /**
+     * Siguiente nombre libre para algo que no tiene variable en el query:
+     * nodo o relacion anonimos ("N" -> __N1, "E" -> __E1, como el __E1 del SPEC) o una propiedad suya.
+     * No lo reserva: para eso esta withUsed.
+     */
+    public String nextFresh(String prefix) {
+        int n = 1;
+        while (used.contains("__" + prefix + n)) n++;
+        return "__" + prefix + n;
+    }
+
+    /** Marca un nombre Prolog como usado (lo calculo nextFresh). */
+    public SymbolTable withUsed(String prologName) {
+        return new SymbolTable(variables, properties, add(used, prologName));
+    }
+
     // Si 'base' ya esta ocupado (p.ej. 'a' y 'A' dan ambos __A) se agrega _2, _3, ...
     private String fresh(String base) {
         if (!used.contains(base)) return base;

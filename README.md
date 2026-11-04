@@ -7,20 +7,25 @@
 **Cyphail** is an interactive graph query processor designed to explore and apply three core programming paradigms through progressive practical implementation:
 
 - **Object-Oriented Programming (OOP)** — Modular software architecture, Command Pattern (`CommandRegistry`), and domain modeling.
-- **Functional Programming (FP)** — Pure monadic parser combinators (`Or`, `Star`, `Plus`, `Opt`, `Sequence`, `Combine`), immutable AST structures with Java Records, and functional validation streams.
-- **Logic Programming (LP)** — Graph database logic execution (preparation for SWI-Prolog unification in Sprint P2).
+- **Functional Programming (FP)** — Hand-written parser combinators (`Or`, `Seq`, `Star`, `TFlat`, `RFlat`), immutable AST structures with Java Records, sealed types and pattern matching.
+- **Logic Programming (LP)** — Query execution in SWI-Prolog: the query is transpiled to Prolog goals that the engine resolves by unification and backtracking.
 
-This is **Sprint P1 (Setiembre 2026)**, which extends the initial prototype (P1.1) by incorporating:
-1. **Functional Parser Combinators** built from scratch in Java to parse Cypher queries (`MATCH`, `WHERE`, `CREATE`, `DELETE`, `RETURN`).
-2. **AST (Abstract Syntax Tree) Generation & Pretty-Printing** via the `.tree` REPL command in a pre-order pseudo-JSON representation.
-3. **Semantic Scope Validation (`VariableValidator`)** detecting undefined variables or out-of-order declarations with descriptive messages in English.
-4. **Decoupled Data Architecture ("Sin Alambramiento")** loading dynamic datasets directly from disk (`data/*.json`), allowing hot-editing of graphs without recompilation.
-5. **Comprehensive Test Suite** verifying cases **C1 through C11** and custom extension **C12 ("Sorpresas")**.
+This is **Sprint P2 (Octubre–Noviembre 2026)**. The full flow is:
+
+1. `Repl` reads a statement (multiline, ending with `;`) or runs a `.cyphail` script with `.load`.
+2. `CyphailParser` builds the AST, now with **relationship patterns** (`-[r:TYPE {k: v}]->`, `<-[...]-`, `-[...]-`), `AND`/`OR`/`NOT`, decimals, booleans, `CREATE` without `MATCH`, `SET` and `REMOVE`.
+3. `VariableValidator` checks static semantics (P1 rules + P2 rules on relationships, labels and the `__` prefix).
+4. `CodeGen` transpiles the AST into Prolog goals and keeps the variable mapping (`SymbolTable`).
+5. `PrologEngine` (broker) starts SWI-Prolog, keeps an **MQI** socket session and sends the goal.
+6. The engine (`prolog/cy_engine.pl` + `prolog/graphs/*.pl`) runs the query and answers with JSON, parsed with Gson.
+7. `Repl` shows the table.
+
+The Sprint P1 fake engine (`FakePrologEngine`, JSON data) was removed, as required by the P2 SPEC.
 
 **Course:** EIF400-II-2026: Paradigmas de Programación  
 **Institution:** Escuela de Informática — Universidad Nacional de Costa Rica  
 **Professor:** Dr. Carlos Loría-Sáenz  
-**Date:** Setiembre 2026  
+**Date:** Noviembre 2026  
 
 ---
 
@@ -31,21 +36,23 @@ This is **Sprint P1 (Setiembre 2026)**, which extends the initial prototype (P1.
 | Priscilla Murillo Romero | 402640465 |
 | Aaron Ruiz Medina | 402620823 |
 | Samael Sánchez Mora | 119470968 |
-| Daniel Villarroel Abaduca | 402510622 |
+| Daniel Villarroel Abaduca | A00150150 |
 | Nicolás Zárate Hernández | 208730258 |
 
 ---
 
 ## Prerequisites
 
-- **Java Development Kit (JDK):** 21 or higher (configured for Java 26)
+- **Java Development Kit (JDK):** 26
 - **Apache Maven:** 3.8.1 or higher
+- **SWI-Prolog:** 9.x or higher, with the `swipl` command available in the `PATH` (it includes the `mqi` library)
 
 ### Environment Verification
 
 ```bash
 java --version
 mvn --version
+swipl --version
 ```
 
 ---
@@ -62,13 +69,24 @@ mvn clean package
 
 This will:
 - Compile main and test sources.
-- Execute the complete test suite (43+ JUnit 5 tests covering all parser combinators, AST printer, and C1–C12 test cases).
+- Execute the complete test suite (151 JUnit 5 tests: parser, AST, validator, CodeGen, MQI, REPL and an end-to-end test that starts SWI-Prolog).
 - Generate an executable Uber/Shaded JAR containing all dependencies at:
   ```
   target/cyphail-1.0-SNAPSHOT.jar
   ```
 
+The Prolog engine has its own tests:
+
+```bash
+cd prolog/tests
+swipl -g run_tests -t halt cy_engine_tests.pl
+```
+
+It runs 11 tests (`test_1` … `test_11`, the style seen in class), all of them must print `OK`.
+
 ### Run the Application
+
+Always run it **from the project root**: the broker starts `swipl -l prolog/engine.pl mqi` with that relative path.
 
 #### Option 1: Direct Java Execution (Cross-platform)
 ```bash
@@ -97,14 +115,33 @@ All system commands begin with a dot (`.`):
 |---------|-------------|
 | `.help` | Display available commands and operational instructions |
 | `.about` | Show project metadata, version, and author information |
-| `.exit` | Terminate the interactive REPL session |
-| `.use` | List all available graph datasets discovered in `data/` |
-| `.use <graph_name>` | Load and activate a specific dataset (e.g., `.use person`, `.use client`) |
-| `.tree <query>` | Parse a Cypher query and display its AST in pre-order notation |
+| `.exit` / `.quit` | Terminate the interactive REPL session (also closes SWI-Prolog) |
+| `.use` | List the graphs available in the Prolog engine (`cy_db/1`) |
+| `.use <graph_name>` | Select the current graph and **reload it** from `prolog/graphs/<graph_name>.pl` (e.g., `.use empresa`, `.use p1`) |
+| `.tree <query>` | Parse a query and display its AST in pre-order notation |
+| `.load "<path>"` | Read a `.cyphail` script, then parse and execute each statement (e.g., `.load "data/casos_p2.cyphail"`, `.load "data/casos_p1.cyphail"`) |
+
+### Statements
+
+A statement can span several lines and **ends with `;`** (a blank line also ends it). Comments `//` and `/* */` are ignored.
+
+```cypher
+cyphail> .use empresa
+cyphail> MATCH (a:Persona)-[r:CONOCE]->(b:Persona)
+WHERE r.desde > 2010 AND b.edad >= 30
+RETURN a.nombre, b.nombre, r.desde;
+
+a.nombre  b.nombre  r.desde
+--------  --------  -------
+Marta     Jose      2015
+Pedro     Jose      2020
+
+(2 row(s))
+```
 
 ### AST Inspection with `.tree`
 
-The `.tree` command invokes `CyphailParser`, builds the internal AST, runs `VariableValidator`, and outputs the structured tree using `AstPrinter`:
+The `.tree` command invokes `CyphailParser`, builds the internal AST and prints it with `AstPrinter`:
 
 ```cypher
 cyphail> .tree MATCH (m:Movie) WHERE m.year > 1990 RETURN m.title AS title, m.year AS year
@@ -138,36 +175,40 @@ Query{
 }
 ```
 
-If the query contains semantic variable errors (such as referencing an undefined variable or using a variable before declaration), `.tree` halts formatting and displays the validation error:
+If the query has a static semantic error (for example an undefined variable, cases C10/C11), `.tree` **still shows the tree** and then the error. A syntax error has no tree, so only the error is shown:
 ```
-cyphail> .tree MATCH (p:Person) WHERE q.age > 60 RETURN q AS name
-Error: Variable 'q' is not defined in clause WHERE
+cyphail> .tree MATCH (p:Person) WHERE q.age > 60 RETURN q AS name;
+Query{
+  ...
+}
+ERROR: Variable 'q' is not defined in clause WHERE
 ```
 
 ---
 
-## Dynamic Data Architecture (`data/` Directory & Hot-Reload)
+## Prolog Engine and Graphs (`prolog/`)
 
-To eliminate hardcoded data ("alambramiento"), `JsonGraphLoader` reads datasets directly from the `data/` directory relative to execution:
+Each graph `G` is a set of Prolog facts, as if it had been created from the REPL:
 
-* **Available Datasets:**
-  * `data/movies.json` — Movie nodes and metadata.
-  * `data/books.json` — Book catalog with pages and authors.
-  * `data/person.json` — People records and ages.
-  * `data/order.json` — Customer orders, statuses, and links.
-  * `data/amigos.json` — Social network relationships.
-  * `data/client.json` — VIP clients, ratings, and loyalty badges.
+| Fact | Meaning |
+|------|---------|
+| `cy_db(G)` | the graph exists (this is what `.use` lists) |
+| `user_G_node(Id)` | node |
+| `user_G_label(NodeId, Label)` | node label |
+| `user_G_edge(EId, Type, From, To)` | directed relationship |
+| `user_G_prop(NodeOrEdgeId, Key, Value)` | property of a node or a relationship |
 
-### Hot-Reload Demonstration
-Because files are loaded directly from disk via Google Gson rather than from inside the compiled JAR:
-1. Open the REPL and select a graph: `.use person`.
-2. Inspect or query the nodes.
-3. Edit `data/person.json` in any text editor (modify an age or add a node) and save.
-4. Run `.use person` or query again in the open REPL: the updated data is reflected immediately **without restarting or recompiling**.
+Graphs: `prolog/graphs/amigos.pl`, `prolog/graphs/empresa.pl` (used by the P2 reference cases: `TRABAJA_EN`, `CONOCE`, `SOCIO_DE`), `prolog/graphs/movies.pl` and `prolog/graphs/p1.pl` (the data of the Sprint P1 JSON files: `Movie`, `Book`, `Person`, `Order`, `Client`, used by the P1 cases). To add a graph, create `prolog/graphs/g.pl`, declare `cy_db(g)` in `cy_engine.pl` and load it in `engine.pl`.
+
+`.use G` always **reloads** the graph (`set_current_graph/1` -> `cy_load_graph/1`): it first removes the `user_G_*` facts in memory (`retractall`) and then consults `graphs/G.pl` again, so the graph is always exactly what the file says.
+
+The runtime (`cy_engine.pl`) provides the comparators `cy_eq cy_neq cy_lt cy_gt cy_le cy_ge`, the query cycle `cy_create_query/2 → cy_exec_query/3 → cy_erase_query/1` and the table formatting (`cy_format_table`).
 
 ---
 
 ## Test Cases (Sprint P1: C1 to C12)
+
+"Todo P1 debe funcionar" (P2 review sheet): the twelve P1 cases run on the `p1` graph with `.load "data/casos_p1.cyphail"`. Cases 1-6 and 8 are executed (for example C2 -> `The Great Gatsby 180`, C3 -> `Priscilla 35`, C8 -> `Priscilla 50000`); cases 7 and 9 contain `CREATE`/`DELETE`, so they are shown with `.tree` (P2 scope); cases 10-12 show the tree and the semantic error.
 
 The parser and AST validator support the complete suite of required test cases:
 
@@ -206,6 +247,31 @@ RETURN b.clientId AS id, b.level AS badgeLevel
 
 ---
 
+## Test Cases (Sprint P2: reference cases)
+
+Cases from `EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md`, executed on the `empresa` graph. All of them can be run with `.load "data/casos_p2.cyphail"`; the exact ASTs are checked in `CyphailParserP2Test`.
+
+| Case | What it exercises | Status |
+|------|-------------------|--------|
+| **1** | `-[r]->` without type, `RETURN r` (relationship id) | ✅ Parsed and executed |
+| **2** | `-[:TYPE]->` without variable | ✅ Parsed and executed |
+| **3** | Reverse direction `<-[r:T]-` and undirected `-[r:T]-` (`IN`, `OUT`, `NONE` in the AST) | ✅ Parsed and executed |
+| **4** | Relationship properties `{desde: 2015}` and `r.desde` in RETURN | ✅ Parsed and executed |
+| **5** | WHERE on relationship and node properties with `AND` | ✅ Parsed and executed |
+| **6** | Inline properties + WHERE with `OR` / `NOT`, strings with `'...'` | ✅ Parsed and executed |
+| **7** | MATCH with two patterns + `CREATE` reusing variables | ✅ Parsed, shown with `.tree` (not executed, see P2 scope) |
+| **8** | `CREATE` without MATCH, boolean `true`, `RETURN a, r, e` | ✅ Parsed, shown with `.tree` (not executed) |
+| **9** | `DELETE r` of a relationship with WHERE | ✅ Parsed, shown with `.tree` (not executed) |
+| **10** | Three patterns with shared variables, parentheses, `AND`/`OR`/`NOT`, decimals | ✅ Parsed and executed |
+| **8b** | Two patterns sharing `e` (join variable without repeating the label) | ✅ Parsed and executed |
+| **8c** | Disconnected patterns (cartesian product) | ✅ Parsed and executed |
+
+**Validations defined by the team** (the reference document asks to fix them with a test):
+- **Repeated label:** a node variable reused with *different* labels (`(e:Empresa)` … `(e:Ciudad)`) is an error; reusing it without a label (`(e)`) is valid (`VariableValidatorTest`).
+- **Relationship uniqueness:** the same relationship variable cannot appear twice (validator, SPEC II.6); different relationships of the same `MATCH` must match different edges (`cy_neq(__E1, __E2)`, as in the SPEC example).
+
+---
+
 ## CodeGen: Cyphail → Prolog Transpiler (Sprint P2)
 
 The `codegen` package transpiles a validated AST into Prolog goals that the SWI-Prolog engine (`prolog/cy_engine.pl`) executes through MQI. `CodeGen` is an AST visitor written with sealed types and pattern-matching `switch`; it threads an immutable state (symbol table + emitted goals) from one method to the next.
@@ -219,40 +285,59 @@ gen.symbols();  // SymbolTable: Cyphail variable -> Prolog variable
 
 ### Generated goal
 
+The SPEC example (graph `amigos`):
+
 ```text
-MATCH (m:Movie) WHERE m.year > 2000 RETURN m.title
+MATCH (a)-[:amigo]->(b), (b)-[:amigo]->(a)
+WHERE a.age > 18 AND a.age = b.age
+RETURN a.name, b.name
 ```
 ```prolog
-cy_create_query(__QueryId, (cy_row(__M_title) :- user_movies_node(__M), user_movies_label(__M, 'Movie'),
-    user_movies_prop(__M, year, __M_year), cy_gt(__M_year, 2000), user_movies_prop(__M, title, __M_title))),
-cy_exec_query(__QueryId, ['m.title'], Rows), cy_erase_query(__QueryId)
+cy_create_query(__QueryId, (cy_row(__A_name, __B_name) :-
+    user_amigos_edge(__E1, amigo, __A, __B), user_amigos_edge(__E2, amigo, __B, __A), cy_neq(__E1, __E2),
+    user_amigos_prop(__A, age, __A_age), cy_gt(__A_age, 18),
+    user_amigos_prop(__B, age, __B_age), cy_eq(__A_age, __B_age),
+    user_amigos_prop(__A, name, __A_name), user_amigos_prop(__B, name, __B_name))),
+cy_exec_query(__QueryId, ['a.name', 'b.name'], Rows), cy_erase_query(__QueryId)
 ```
 
-The engine binds `Rows` to the table as text (`header\nrow1\nrow2...`, columns separated by a space); with no results it holds only the header. The broker extracts that binding from the MQI JSON response.
+The engine binds `Rows` to the table as text (`header\nrow1\nrow2...`, columns separated by a tab, so a value with spaces such as `'The Matrix'` stays in one column); with no results it holds only the header. The broker extracts that binding from the MQI JSON response.
+
+`__QueryId` arrives unbound: `cy_create_query/2` gives it a unique id with `gensym` (`cy_q1`, `cy_q2`, ...) and stores the clause as `cy_query(Id, Head) :- Body`; `cy_exec_query/3` and `cy_erase_query/1` only use the clause of that id.
 
 ### Translation rules
 
 | Cyphail | Prolog |
 |---------|--------|
-| `(a:L1:L2)` | `user_G_node(__A), user_G_label(__A, 'L1'), user_G_label(__A, 'L2')` |
+| `(a:L1:L2)` alone | `user_G_node(__A), user_G_label(__A, 'L1'), user_G_label(__A, 'L2')` |
 | `(a:L)` again (join variable) | only `user_G_label(__A, 'L')` |
-| `{name: "Ana"}` | `user_G_prop(__A, name, __A_name), cy_eq(__A_name, 'Ana')` |
+| `(a)-[r:T]->(b)` | `user_G_edge(__R, 'T', __A, __B)` (the edge binds both nodes) |
+| `(a)<-[r:T]-(b)` | `user_G_edge(__R, 'T', __B, __A)` |
+| `(a)-[r:T]-(b)` | `(user_G_edge(__R, 'T', __A, __B) ; user_G_edge(__R, 'T', __B, __A))` |
+| `-[r]->` (no type) / `-[:T]->` (no variable) | type `_` / fresh variable `__E1` (anonymous node: `__N1`) |
+| two relationships in one MATCH | `cy_neq(__E1, __E2)` |
+| `{name: "Ana"}` (node or relationship) | `user_G_prop(__A, name, __A_name), cy_eq(__A_name, 'Ana')` |
 | `a.age > 18` | `user_G_prop(__A, age, __A_age), cy_gt(__A_age, 18)` |
 | `= <> < > <= >=` | `cy_eq cy_neq cy_lt cy_gt cy_le cy_ge` |
+| `x AND y` / `x OR y` / `NOT x` | `x, y` / `once((x ; y))` / `\+ (x)` |
 | `RETURN a.name AS nombre` | argument `__A_name` of `cy_row`, column `nombre` |
-| `RETURN a` | argument `__A`: only the node id (P2 restriction) |
+| `RETURN a` / `RETURN r` | argument `__A` / `__R`: only the node or relationship id (P2 restriction) |
 
-`G` is the current graph. A property is fetched only once even if it is used several times; a row whose property is missing is discarded.
+`G` is the current graph. A property is fetched only once even if it is used several times; a row whose property is missing is discarded. Each `OR` branch fetches the properties it uses, so `a OR b` holds when only one side has the property; `once` keeps a row from appearing twice when both sides hold.
+
+**Known limitation (null, three-valued logic):** `NOT x.p = v` also holds when `x` has no property `p` (negation as failure), while Cypher would give `null`.
 
 ### Variable mapping
 
-- Cyphail variables become Prolog variables with the `__` prefix and the first letter in uppercase: `a` → `__A`, `persona` → `__Persona`.
+- Cyphail variables become Prolog variables with the `__` prefix and the first letter in uppercase: `a` → `__A`, `persona` → `__Persona`. That is why a Cyphail variable cannot start with `__` (SPEC II.7).
 - Property computations get their own variable: `a.name` → `__A_name`.
 - `SymbolTable` keeps these associations to build the final table in Java, and resolves collisions with a `_N` suffix (`a` and `A` → `__A`, `__A_2`). `__QueryId` and `Rows` are reserved.
 
 ### P2 scope
 
-As indicated by the professor in class, only read queries (`MATCH`, `WHERE`, `RETURN`) are transpiled. `CREATE` and `DELETE` are still parsed and shown by `.tree`, but `CodeGen` rejects them with a `CodeGenException` (`"CREATE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)"`). Relationship patterns will be translated to the engine's `cy_edge(G, out|in|none, E, Type, A, B)` once the AST supports them.
+As indicated by the professor in class (and in the exercises of session 23/10: *"al inicio nos vamos a concentrar en queries por encima de 'updates' por razones de tiempo"*), only read queries (`MATCH`, `WHERE`, `RETURN`) are executed. `CREATE`, `SET`, `REMOVE` and `DELETE` are parsed, validated and shown by `.tree`, but `CodeGen` rejects them with a `CodeGenException` (`"CREATE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)"`).
+
+Out of the sprint (per the reference cases document): chained patterns (more than one relationship in the same pattern), variable length `*1..3`, alternative types `:A|B`, `DETACH DELETE`.
 
 ---
 
@@ -260,65 +345,52 @@ As indicated by the professor in class, only read queries (`MATCH`, `WHERE`, `RE
 
 ```
 Cyphail-grupo01-3pm/
-├── pom.xml                                   # Maven configuration (Java 26, Shade, JUnit 5)
+├── pom.xml                                   # Maven configuration (Java 26, Shade, JUnit 5, Gson)
 ├── README.md                                 # Official project documentation
 ├── cyphail.bat                               # Windows execution script
 ├── cyphail                                   # Unix execution script
-├── data/                                     # Hot-reloadable graph datasets (JSON)
-│   ├── amigos.json
-│   ├── books.json
-│   ├── client.json
-│   ├── movies.json
-│   ├── order.json
-│   └── person.json
+├── data/                                     # .cyphail scripts for .load
+│   ├── casos_p1.cyphail                      # P1 cases (graph p1)
+│   ├── casos_p2.cyphail                      # P2 reference cases
+│   └── sample_queries.cyphail
+├── prolog/                                   # SWI-Prolog engine
+│   ├── engine.pl                             # Entry point loaded by the broker
+│   ├── cy_engine.pl                          # Runtime: comparators, query cycle, table format
+│   ├── graphs/ (amigos.pl, empresa.pl, movies.pl, p1.pl)
+│   └── tests/cy_engine_tests.pl
 └── src/
     ├── main/java/org/cyphail/
     │   ├── Main.java                         # Application entrypoint
-    │   ├── ast/                              # AST Model (Records) & AstPrinter
-    │   │   ├── AstPrinter.java
-    │   │   ├── Binary.java / BinaryOp.java
-    │   │   ├── CreateClause.java / DeleteClause.java
-    │   │   ├── MatchClause.java / WhereClause.java / ReturnClause.java
-    │   │   ├── PatternNode.java / PropertyEntry.java / PropertyAccess.java
-    │   │   └── Query.java / Projection.java / ProjectionItem.java
-    │   ├── codegen/                          # Cyphail -> Prolog transpiler (P2)
+    │   ├── ast/                              # AST model (records, sealed interfaces) & AstPrinter
+    │   │   ├── Query.java / MatchClause.java / WhereClause.java / ReturnClause.java
+    │   │   ├── PatternElement.java / PatternNode.java / PathPattern.java / RelationshipPattern.java / Direction.java
+    │   │   ├── UpdateClause.java / CreateClause.java / DeleteClause.java / SetClause.java / RemoveClause.java ...
+    │   │   ├── Expr.java / Binary.java / And.java / Or.java / Not.java / PropertyAccess.java / Var.java
+    │   │   ├── NumberLit.java / DecimalLit.java / StringLit.java / BoolLit.java
+    │   │   ├── ExprText.java                     # Cyphail text of an expression (columns, errors)
+    │   │   └── AstPrinter.java
+    │   ├── codegen/                          # Cyphail -> Prolog transpiler
     │   │   ├── CodeGen.java / GeneratedQuery.java
     │   │   ├── SymbolTable.java / PrologSyntax.java
     │   │   └── CodeGenException.java
     │   ├── cli/                              # Picocli command bindings
-    │   │   ├── CyphailCommand.java
-    │   │   └── ReplCommand.java
-    │   ├── data/                             # JSON Data loader
-    │   │   ├── FakeGraphData.java
-    │   │   └── JsonGraphLoader.java
-    │   ├── engine/                           # Query execution abstraction
-    │   │   ├── Engine.java
-    │   │   └── FakePrologEngine.java
+    │   ├── engine/                           # Engine interface and PrologEngine (MQI broker)
+    │   ├── mqi/                              # MQI client and JSON response parser (adapted from the professor's demo)
     │   ├── parser/                           # Functional combinator parser
     │   │   ├── CyphailParser.java
     │   │   ├── combinators/Parsers.java
     │   │   ├── core/ (Parser, Result, Ok, Fail, InputString, TokenString, Lexer)
     │   │   └── lexer/Lexers.java
     │   ├── repl/                             # Interactive REPL & Command Pattern
-    │   │   ├── CommandOutcome.java / CommandRegistry.java
-    │   │   ├── QueryHandler.java / Repl.java / ReplCommand.java
-    │   │   └── ReplMessages.java
-    │   ├── util/                             # Table formatting & I/O helpers
-    │   │   ├── IO.java
-    │   │   └── TableFormatter.java
-    │   └── validator/                        # Semantic scope validation
-    │       └── VariableValidator.java
+    │   ├── util/                             # Table formatting, I/O helpers, Statements (trailing ';')
+    │   └── validator/                        # Static semantic validation (VariableValidator, VariableTable)
     └── test/java/org/cyphail/
-        ├── codegen/
-        │   ├── CodeGenTest.java              # Hand-built ASTs -> Prolog goals
-        │   └── PrologSyntaxTest.java
-        └── parser/
-            ├── AstPrinterTest.java
-            ├── CyphailParserTest.java
-            ├── CyphailParserP1Test.java      # C1–C12 test suite
-            ├── combinators/ParsersTest.java
-            ├── lexer/LexerTest.java
-            └── result/ResultTest.java
+        ├── ast/ (AstPrinterP2Test, P2Asts)
+        ├── codegen/ (CodeGenTest, CodeGenP2Test, PrologSyntaxTest)
+        ├── mqi/MqiResponseParserTest.java
+        ├── parser/ (CyphailParserTest, CyphailParserP1Test, CyphailParserP2Test, AstPrinterTest, ...)
+        ├── repl/ (PrologEngineAndReplP2Test, TreeCommandTest)
+        └── validator/VariableValidatorTest.java
 ```
 
 ---
@@ -329,8 +401,9 @@ Cyphail-grupo01-3pm/
 |------------|---------|---------|
 | **Java** | 26 | Core programming language (Records, Pattern Matching, Sealed Types) |
 | **Maven** | 3.8.1+ | Build lifecycle, dependency management, and Uber JAR packaging |
+| **SWI-Prolog** | 9.x+ | Query engine, reached through MQI (Machine Query Interface) |
 | **picocli** | 4.7.6 | Command line interface parsing |
-| **Gson** | 2.11.0 | JSON deserialization for decoupled data loading |
+| **Gson** | 2.11.0 | Parsing of the MQI JSON responses |
 | **JUnit Jupiter** | 5.10.2 | Unit testing framework (scope: test) |
 | **Maven Shade Plugin** | 3.5.1 | Packaging self-contained executable JAR |
 

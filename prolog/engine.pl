@@ -10,3 +10,4 @@
 :- ensure_loaded('graphs/amigos').
 :- ensure_loaded('graphs/empresa').
 :- ensure_loaded('graphs/movies').
+:- ensure_loaded('graphs/p1').
