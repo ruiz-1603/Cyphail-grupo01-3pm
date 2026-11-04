@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.cyphail.util.Statements.stripTrailingSemicolon;
+
 /*
  * Proyecto Cyphail
  * Grupo 01-3pm
@@ -56,7 +58,7 @@ public final class CommandRegistry {
             return CommandOutcome.message(availableGraphsTable(engine));
         }
 
-        String normalized = Repl.stripTrailingSemicolon(graphName).trim().toLowerCase();
+        String normalized = stripTrailingSemicolon(graphName).trim().toLowerCase();
 
         try {
             long start = System.currentTimeMillis();
@@ -64,18 +66,21 @@ public final class CommandRegistry {
             long time = Math.max(1L, System.currentTimeMillis() - start);
             return CommandOutcome.message("OK. \"" + normalized + "\" graph available after " + time + "ms\n");
         } catch (Exception e) {
-            return CommandOutcome.message("ERROR: Graph '" + normalized + "' not found. " + e.getMessage());
+            // El engine ya explica el problema (p.ej. "Graph 'nada' not found."): no se repite
+            return CommandOutcome.message("ERROR: " + e.getMessage());
         }
     }
 
     private static String availableGraphsTable(Engine engine) {
         try {
+            long start = System.currentTimeMillis();
             List<String> graphs = engine.listAvailableGraphs();
+            long time = Math.max(1L, System.currentTimeMillis() - start);
             String[][] table = Stream.concat(
                     Stream.<String[]>of(new String[]{"Graph"}),
                     graphs.stream().map(g -> new String[]{g})
             ).toArray(String[][]::new);
-            return TableFormatter.formatTable(table) + "\nOK. Query available after 5 ms.";
+            return TableFormatter.formatTable(table) + "\nOK. Query available after " + time + " ms.";
         } catch (Exception e) {
             return "ERROR: could not list available graphs: " + e.getMessage();
         }
@@ -86,13 +91,15 @@ public final class CommandRegistry {
             return CommandOutcome.message("Usage: .tree <query>");
         }
 
-        String cleanQuery = Repl.stripTrailingSemicolon(query);
+        String cleanQuery = stripTrailingSemicolon(query);
 
+        // El arbol se muestra siempre que haya AST (guia P1: ".tree en cada Ck", incluidos C10 y C11);
+        // si ademas hay un error de semantica estatica, se informa debajo del arbol
         return switch (CyphailParser.parse(cleanQuery)) {
             case Ok<InputString, Query, String>(Query ast, InputString _) ->
-                    VariableValidator.validate(ast)
-                            .map(err -> CommandOutcome.message("ERROR: " + err))
-                            .orElseGet(() -> CommandOutcome.message(AstPrinter.print(ast)));
+                    CommandOutcome.message(AstPrinter.print(ast) + VariableValidator.validate(ast)
+                            .map(err -> "\nERROR: " + err)
+                            .orElse(""));
             case Fail<InputString, Query, String>(String reason) ->
                     CommandOutcome.message("ERROR: " + reason);
         };
@@ -160,7 +167,7 @@ public final class CommandRegistry {
         if (rawArg == null) {
             return "";
         }
-        String trimmed = Repl.stripTrailingSemicolon(rawArg).trim();
+        String trimmed = stripTrailingSemicolon(rawArg).trim();
         if (trimmed.length() >= 2
                 && ((trimmed.startsWith("\"") && trimmed.endsWith("\""))
                 || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {

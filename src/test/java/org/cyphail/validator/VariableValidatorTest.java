@@ -251,6 +251,27 @@ class VariableValidatorTest {
         assertEquals("Labels can only be changed on nodes, but 'r' is a relationship (clause SET)", errorOf(query));
     }
 
+    // Casos P2, "etiqueta no repetida": la variable de join puede repetirse sin etiqueta (caso 8b)...
+    @Test
+    void variableDeJoinSinEtiquetaEsValida() {
+        var query = new Query(match(
+                        path(node("p", "Persona"), anonymousRel(Direction.OUT, "TRABAJA_EN"), node("e", "Empresa")),
+                        path(node("c", "Persona"), anonymousRel(Direction.OUT, "TRABAJA_EN"), node("e"))),
+                Optional.empty(), List.of(), returning(item(prop("e", "nombre"))));
+
+        assertValid(query);
+    }
+
+    // ...pero no con otra etiqueta
+    @Test
+    void variableDeNodoNoPuedeCambiarDeEtiqueta() {
+        var query = new Query(match(node("e", "Empresa"), node("e", "Ciudad")),
+                Optional.empty(), List.of(), returning(item(prop("e", "nombre"))));
+
+        assertEquals("Node variable 'e' cannot have different labels in the same query: [Empresa] and [Ciudad]",
+                errorOf(query));
+    }
+
     @Test
     void columnaRepetidaEnReturn() {
         var query = new Query(match(node("a"), node("b")), Optional.empty(), List.of(),

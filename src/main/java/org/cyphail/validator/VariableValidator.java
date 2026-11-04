@@ -4,8 +4,15 @@ import org.cyphail.ast.*;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static org.cyphail.ast.ExprText.text;
 
 /**
  * Proyecto Cyphail - Grupo 01-3pm
@@ -55,6 +62,9 @@ public final class VariableValidator {
             throw new ValidationException("WHERE requires a MATCH clause");
         }
 
+        // 0. Una variable de nodo reutilizada (join) no puede cambiar de etiquetas
+        checkSameLabels(query);
+
         // 1. MATCH: declara nodos y relaciones en orden
         var table = query.match()
                 .map(match -> declarePatterns(VariableTable.empty(), match.patterns(), "MATCH"))
@@ -78,6 +88,40 @@ public final class VariableValidator {
     }
 
     // ---------------------------------------------------------------- patrones
+
+    /*
+     * Casos P2 (Validaciones, "etiqueta no repetida"): si una variable de nodo se repite,
+     * todas las apariciones que traen etiquetas deben traer las mismas.
+     * (e:Empresa) ... (e) es valido; (e:Empresa) ... (e:Ciudad) es error.
+     */
+    private static void checkSameLabels(Query query) {
+        var patterns = Stream.concat(
+                query.match().stream().flatMap(match -> match.patterns().stream()),
+                query.updates().stream()
+                        .flatMap(update -> update instanceof CreateClause(var created)
+                                ? created.stream() : Stream.empty()));
+
+        var labelsByVariable = patterns
+                .flatMap(VariableValidator::nodesOf)
+                .filter(node -> node.variable().isPresent() && !node.labels().isEmpty())
+                .collect(Collectors.groupingBy(node -> node.variable().get(), LinkedHashMap::new,
+                        Collectors.mapping(node -> Set.copyOf(node.labels()), Collectors.toCollection(LinkedHashSet::new))));
+
+        labelsByVariable.forEach((variable, labelSets) -> {
+            if (labelSets.size() > 1) {
+                throw new ValidationException(String.format(
+                        "Node variable '%s' cannot have different labels in the same query: %s",
+                        variable, labelSets.stream().map(Set::toString).collect(Collectors.joining(" and "))));
+            }
+        });
+    }
+
+    private static Stream<PatternNode> nodesOf(PatternElement element) {
+        return switch (element) {
+            case PatternNode node -> Stream.of(node);
+            case PathPattern(PatternNode left, RelationshipPattern rel, PatternNode right) -> Stream.of(left, right);
+        };
+    }
 
     private static VariableTable declarePatterns(VariableTable table, List<? extends PatternElement> patterns,
                                                  String clause) {
@@ -207,21 +251,6 @@ public final class VariableValidator {
         return table.withColumns(columns);
     }
 
-    // Expresion como se escribio en Cyphail (nombre de columna sin alias)
-    private static String text(Expr expr) {
-        return switch (expr) {
-            case PropertyAccess(String variable, String property) -> variable + "." + property;
-            case Var(String name) -> name;
-            case NumberLit(long value) -> Long.toString(value);
-            case DecimalLit(double value) -> Double.toString(value);
-            case StringLit(String value) -> value;
-            case Binary(BinaryOp op, Expr left, Expr right) -> text(left) + " " + op.symbol() + " " + text(right);
-            case And(Expr left, Expr right) -> text(left) + " AND " + text(right);
-            case Or(Expr left, Expr right) -> text(left) + " OR " + text(right);
-            case Not(Expr operand) -> "NOT " + text(operand);
-        };
-    }
-
     // ---------------------------------------------------------------- expresiones y nombres
 
     private static void checkExpr(Expr expr, VariableTable table, String clause) {
@@ -244,6 +273,7 @@ public final class VariableValidator {
             case NumberLit n -> { }
             case DecimalLit d -> { }
             case StringLit s -> { }
+            case BoolLit b -> { }
         }
     }
 

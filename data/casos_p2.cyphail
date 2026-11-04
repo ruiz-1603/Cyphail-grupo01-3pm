@@ -1,0 +1,60 @@
+// Casos de referencia Sprint P2 (EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md)
+// Uso desde el repl:  .load "data/casos_p2.cyphail"
+// Los casos 7, 8 y 9 (CREATE / DELETE) se ven con .tree pero no se ejecutan (alcance P2: MATCH, WHERE, RETURN)
+.use empresa;
+
+// CASO 1: -[var]-> sin tipo, RETURN de la relacion (su id)
+MATCH (p:Persona)-[r]->(q:Persona)
+RETURN r;
+
+// CASO 2: tipo de relacion sin variable
+MATCH (a:Persona)-[:CONOCE]->(b:Persona)
+RETURN a.nombre, b.nombre;
+
+// CASO 3: direccion inversa <-
+MATCH (e:Empresa)<-[r:TRABAJA_EN]-(p:Persona)
+RETURN p.nombre, e.nombre;
+
+// CASO 3b: sin direccion -
+MATCH (a:Persona)-[r:CONOCE]-(b:Persona)
+RETURN a.nombre, b.nombre;
+
+// CASO 4: propiedades inline en la relacion y r.prop en RETURN
+MATCH (a:Persona)-[r:CONOCE {desde: 2015}]->(b:Persona)
+RETURN a.nombre, b.nombre, r.desde;
+
+// CASO 5: WHERE sobre relacion y nodo con AND
+MATCH (a:Persona)-[r:CONOCE]->(b:Persona)
+WHERE r.desde > 2010 AND b.edad >= 30
+RETURN a.nombre, b.nombre, r.desde;
+
+// CASO 6: propiedades inline + WHERE con OR / NOT
+MATCH (p:Persona)-[t:TRABAJA_EN {cargo: 'Dev'}]->(e:Empresa)
+WHERE t.desde >= 2018 OR NOT e.pais = 'CR'
+RETURN p.nombre, e.nombre, t.cargo, t.desde;
+
+// CASO 7: MATCH + CREATE (solo arbol)
+.tree MATCH (a:Persona {nombre: 'Ana'}), (b:Persona {nombre: 'Luis'})
+CREATE (a)-[:CONOCE {desde: 2020, nivel: 'amigo'}]->(b);
+
+// CASO 8: CREATE sin MATCH (solo arbol)
+.tree CREATE (a:Persona {nombre: 'Marta'})-[r:TRABAJA_EN {cargo: 'Dev', activo: true}]->(e:Empresa {nombre: 'Acme'})
+RETURN a, r, e;
+
+// CASO 9: DELETE de una relacion (solo arbol)
+.tree MATCH (a:Persona)-[r:CONOCE]->(b:Persona)
+WHERE r.desde < 2000
+DELETE r;
+
+// CASO 10: integrador
+MATCH (p:Persona {activo: true})-[t:TRABAJA_EN {cargo: 'Dev'}]->(e:Empresa),
+      (q:Persona)-[s:SOCIO_DE]->(e),
+      (p)-[k:CONOCE]-(q)
+WHERE (t.desde >= 2018 OR s.porcentaje > 25.5) AND NOT k.desde = 2020
+RETURN p.nombre, q.nombre, e.nombre, t.cargo, s.porcentaje, k.desde;
+
+// CASO 8b: dos patrones que comparten e
+MATCH (p:Persona)-[:TRABAJA_EN]->(e:Empresa),
+      (c:Persona)-[:TRABAJA_EN]->(e)
+WHERE p.nombre <> c.nombre
+RETURN p.nombre, c.nombre, e.nombre;

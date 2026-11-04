@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import static org.cyphail.ast.ExprText.text;
 import static org.cyphail.codegen.PrologSyntax.atom;
 import static org.cyphail.codegen.PrologSyntax.call;
 import static org.cyphail.codegen.PrologSyntax.graphPredicate;
@@ -27,7 +28,7 @@ import static org.cyphail.codegen.PrologSyntax.graphPredicate;
  *
  * Es un visitor del AST escrito como en AstPrinter: un metodo por tipo de nodo
  * y switch con pattern matching sobre las interfaces sealed (Expr, UpdateClause).
- * Alcance P2 (indicacion del profesor): solo MATCH, WHERE y RETURN.
+ * Alcance P2 (indicacion del profesor): solo MATCH (nodos y relaciones), WHERE (AND/OR/NOT) y RETURN.
  * El estado (tabla de simbolos + goals emitidos) es inmutable y pasa de un
  * metodo al siguiente: cada metodo recibe un State y devuelve uno nuevo.
  *
@@ -82,6 +83,9 @@ public final class CodeGen {
     // Lista de terminos calculados en orden (columnas del RETURN)
     private record Terms(State state, List<String> texts) {}
 
+    // Nodo o relacion ya declarado: el estado y el termino Prolog que lo identifica (__A, __E1, ...)
+    private record Element(State state, String id) {}
+
 
     /** Transpila el query para el grafo activo (el de .use). */
     public static GeneratedQuery generate(Query query, String graph) {
@@ -105,48 +109,126 @@ public final class CodeGen {
     }
 
 
-    // match := "MATCH" patterns
-
+    // match := "MATCH" pattern
+    // Al final se exige que las relaciones del MATCH sean distintas entre si ("Arco solo una vez", SPEC)
     private static State match(State state, MatchClause match) {
         var current = state;
+        var edges = new ArrayList<String>();
         for (PatternElement element : match.patterns()) {
-            current = switch (element) {
+            var matched = switch (element) {
                 case PatternNode node -> matchNode(current, node);
-                case PathPattern _ -> throw new CodeGenException("Relationship patterns are not supported yet");
+                case PathPattern path -> matchPath(current, path);
             };
+            current = matched.state();
+            if (element instanceof PathPattern) edges.add(matched.id());
         }
-        return current;
+        return distinctEdges(current, edges);
     }
 
-    // (a:L1:L2 {k: v}) -> nodo (si a es nueva), una etiqueta por label y un filtro por propiedad.
+    // Variable del query -> su variable Prolog (la misma si ya aparecio: variable de join).
+    // Sin variable (nodo o relacion anonimos) -> nombre fresco __N1, __E1, ...
+    private static Element declare(State state, Optional<String> variable, String anonymousPrefix) {
+        return variable
+                .map(name -> {
+                    var declared = state.withSymbols(state.symbols().withVariable(name));
+                    return new Element(declared, declared.id(name));
+                })
+                .orElseGet(() -> {
+                    var fresh = state.symbols().nextFresh(anonymousPrefix);
+                    return new Element(state.withSymbols(state.symbols().withUsed(fresh)), fresh);
+                });
+    }
+
+    // (a:L1:L2 {k: v}) solo -> nodo (si a es nueva), una etiqueta por label y un filtro por propiedad.
     // Si 'a' ya aparecio antes (variable de join) no se vuelve a pedir user_G_node.
-    private static State matchNode(State state, PatternNode node) {
-        var variable = node.variable()
-                .orElseThrow(() -> new CodeGenException("Anonymous nodes are not supported yet"));
-        var isNew = state.symbols().variable(variable).isEmpty();
-        var declared = state.withSymbols(state.symbols().withVariable(variable));
-        var id = declared.id(variable);
+    private static Element matchNode(State state, PatternNode node) {
+        var isNew = node.variable().flatMap(name -> state.symbols().variable(name)).isEmpty();
+        var declared = declare(state, node.variable(), "N");
+        var withNode = isNew
+                ? declared.state().emit(declared.state().graphCall("node", declared.id()))
+                : declared.state();
+        return new Element(nodeConstraints(withNode, node, declared.id()), declared.id());
+    }
 
-        var withNode = isNew ? declared.emit(declared.graphCall("node", id)) : declared;
-        var withLabels = withNode.emitAll(node.labels().stream()
-                .map(label -> withNode.graphCall("label", id, atom(label)))
+    // Etiquetas y propiedades inline de un nodo ya declarado
+    private static State nodeConstraints(State state, PatternNode node, String id) {
+        var withLabels = state.emitAll(node.labels().stream()
+                .map(label -> state.graphCall("label", id, atom(label)))
                 .toList());
+        return properties(withLabels, node.variable(), id, node.properties());
+    }
 
-        var current = withLabels;
-        for (PropertyEntry entry : node.properties()) {
-            current = condition(current,
-                    new Binary(BinaryOp.EQ, new PropertyAccess(variable, entry.key()), entry.value()));
+    // (a)-[r:T {k: v}]->(b): como en el SPEC, primero el arco (que liga a los dos nodos),
+    // luego las etiquetas/propiedades de cada nodo y al final las propiedades de la relacion.
+    // Los nodos de un arco no necesitan user_G_node: el arco ya los liga.
+    private static Element matchPath(State state, PathPattern path) {
+        var left = declare(state, path.left().variable(), "N");
+        var right = declare(left.state(), path.right().variable(), "N");
+        var relationship = declare(right.state(), path.relationship().variable(), "E");
+
+        var current = relationship.state();
+        current = current.emit(edge(current, path.relationship(), relationship.id(), left.id(), right.id()));
+        current = nodeConstraints(current, path.left(), left.id());
+        current = nodeConstraints(current, path.right(), right.id());
+        current = properties(current, path.relationship().variable(), relationship.id(), path.relationship().properties());
+        return new Element(current, relationship.id());
+    }
+
+    // user_G_edge(E, Tipo, Desde, Hacia); sin tipo -> '_'
+    //   OUT  (a)-[e]->(b): user_G_edge(E, T, A, B)
+    //   IN   (a)<-[e]-(b): user_G_edge(E, T, B, A)
+    //   NONE (a)-[e]-(b) : en cualquier sentido, (uno ; otro)
+    private static String edge(State state, RelationshipPattern relationship, String id, String left, String right) {
+        var type = relationship.types().isEmpty() ? "_" : atom(relationship.types().getFirst());
+        var outgoing = state.graphCall("edge", id, type, left, right);
+        var incoming = state.graphCall("edge", id, type, right, left);
+        return switch (relationship.direction()) {
+            case OUT -> outgoing;
+            case IN -> incoming;
+            case NONE -> "(" + outgoing + " ; " + incoming + ")";
+        };
+    }
+
+    // {k: v} de un nodo o relacion. Con variable se filtra como WHERE x.k = v (y x.k queda en la tabla
+    // para reutilizarse en el RETURN); sin variable se pide la propiedad con un nombre fresco __V1, ...
+    private static State properties(State state, Optional<String> variable, String id, List<PropertyEntry> entries) {
+        var current = state;
+        for (PropertyEntry entry : entries) {
+            current = variable.isPresent()
+                    ? condition(current, new Binary(BinaryOp.EQ, new PropertyAccess(variable.get(), entry.key()), entry.value()))
+                    : anonymousProperty(current, id, entry);
+        }
+        return current;
+    }
+
+    private static State anonymousProperty(State state, String id, PropertyEntry entry) {
+        var value = state.symbols().nextFresh("V");
+        var declared = state.withSymbols(state.symbols().withUsed(value))
+                .emit(state.graphCall("prop", id, atom(entry.key()), value));
+        var expected = term(declared, entry.value());
+        return expected.state().emit(call("cy_eq", value, expected.text()));
+    }
+
+    // cy_neq(__E1, __E2) para cada par de relaciones del MATCH
+    private static State distinctEdges(State state, List<String> edges) {
+        var current = state;
+        for (int i = 0; i < edges.size(); i++) {
+            for (int j = i + 1; j < edges.size(); j++) {
+                current = current.emit(call("cy_neq", edges.get(i), edges.get(j)));
+            }
         }
         return current;
     }
 
 
-    // where := "WHERE" comparison
+    // where := "WHERE" expression
     private static State where(State state, Optional<WhereClause> where) {
         return where.map(w -> condition(state, w.condition())).orElse(state);
     }
 
     // comparison -> se calculan ambos lados (left primero) y luego el comparador del engine
+    // AND -> un goal tras otro;  OR -> once(( izq ; der ));  NOT -> \+ ( ... )
+    // OR va dentro de once: es un filtro, si ambas ramas se cumplen la fila no debe salir dos veces
     private static State condition(State state, Expr expr) {
         return switch (expr) {
             case Binary(BinaryOp op, Expr left, Expr right) -> {
@@ -154,11 +236,25 @@ public final class CodeGen {
                 var r = term(l.state(), right);
                 yield r.state().emit(call(comparator(op), l.text(), r.text()));
             }
-            case And _, Or _, Not _ ->
-                    throw new CodeGenException("AND, OR and NOT are not supported yet: " + text(expr));
-            case PropertyAccess _, Var _, NumberLit _, DecimalLit _, StringLit _ ->
+            case And(Expr left, Expr right) -> condition(condition(state, left), right);
+            case Or(Expr left, Expr right) -> state.emit("once((" + branch(state, left) + " ; " + branch(state, right) + "))");
+            case Not(Expr operand) -> state.emit("\\+ (" + branch(state, operand) + ")");
+            case PropertyAccess _, Var _, NumberLit _, DecimalLit _, StringLit _, BoolLit _ ->
                     throw new CodeGenException("A condition must be a comparison: " + text(expr));
         };
+    }
+
+    /*
+     * Goals de una rama de OR o del operando de NOT, separados por coma.
+     * Cada rama pide las propiedades que use: si en una rama falta la propiedad, esa rama falla
+     * pero la otra puede cumplirse (a OR b). Lo que la rama agrega a la tabla de simbolos se descarta,
+     * porque fuera de la rama no se sabe si quedo ligado; si se vuelve a pedir, se pide con el mismo
+     * nombre (el valor de una propiedad es unico, asi que unifica con lo que ya hubiera).
+     * Limitacion conocida (null, logica tri-valuada): NOT x.p = v tambien se cumple si x no tiene p.
+     */
+    private static String branch(State state, Expr expr) {
+        var inner = condition(new State(state.graph(), state.symbols(), List.of()), expr);
+        return String.join(", ", inner.goals());
     }
 
     // Comparadores de prolog/cy_engine.pl
@@ -179,6 +275,7 @@ public final class CodeGen {
             case NumberLit(long value) -> new Term(state, Long.toString(value));
             case DecimalLit(double value) -> new Term(state, Double.toString(value));
             case StringLit(String value) -> new Term(state, atom(value));
+            case BoolLit(boolean value) -> new Term(state, Boolean.toString(value));
             case Var(String name) -> new Term(state, state.id(name));
             case PropertyAccess(String variable, String property) -> property(state, variable, property);
             case Binary _, And _, Or _, Not _ ->
@@ -236,20 +333,5 @@ public final class CodeGen {
         return items.stream()
                 .map(item -> item.alias().orElseGet(() -> text(item.expr())))
                 .toList();
-    }
-
-    // Expresion como se escribio en Cyphail (para columnas y mensajes de error)
-    private static String text(Expr expr) {
-        return switch (expr) {
-            case PropertyAccess(String variable, String property) -> variable + "." + property;
-            case Var(String name) -> name;
-            case NumberLit(long value) -> Long.toString(value);
-            case DecimalLit(double value) -> Double.toString(value);
-            case StringLit(String value) -> value;
-            case Binary(BinaryOp op, Expr left, Expr right) -> text(left) + " " + op.symbol() + " " + text(right);
-            case And(Expr left, Expr right) -> text(left) + " AND " + text(right);
-            case Or(Expr left, Expr right) -> text(left) + " OR " + text(right);
-            case Not(Expr operand) -> "NOT " + text(operand);
-        };
     }
 }

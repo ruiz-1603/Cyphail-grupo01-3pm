@@ -52,11 +52,27 @@ class CyphailParserTest {
         );
     }
 
+    // SPEC P2 II.4 y gramatica (readingClause*): hay CREATE sin MATCH previo
     @Test
-    void failsWhenQueryDoesNotStartWithMatch() {
-        var result = CyphailParser.parse("CREATE (m:Movie) RETURN m.title");
+    void parsesCreateWithoutMatch() {
+        String text = "CREATE (m:Movie) RETURN m.title";
 
-        assertEquals(Result.fail("Expected 'MATCH' at position 0"), result);
+        var expected = new Query(
+                Optional.empty(),
+                Optional.empty(),
+                List.of(new CreateClause(List.of(new PatternNode("m", List.of("Movie"), List.of())))),
+                Optional.of(new ReturnClause(new Projection(
+                        List.of(new ProjectionItem(new PropertyAccess("m", "title"), Optional.empty())),
+                        List.of()))));
+
+        assertEquals(Result.ok(expected, new InputString(text, text.length())), CyphailParser.parse(text));
+    }
+
+    @Test
+    void failsWhenQueryStartsWithUnknownClause() {
+        var result = CyphailParser.parse("CREAT (m:Movie) RETURN m.title");
+
+        assertEquals(Result.fail("Expected 'MATCH', 'CREATE' or 'RETURN' at position 0"), result);
     }
 
         @Test
