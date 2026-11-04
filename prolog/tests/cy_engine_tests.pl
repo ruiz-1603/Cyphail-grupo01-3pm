@@ -1,5 +1,16 @@
 /*
- * Pruebas unitarias del engine Prolog (estilo visto en clase)
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolas Zarate Hernandez
+ -------------------------------------
+
+ * Pruebas unitarias del engine Prolog
  */
 
 :- ensure_loaded('../engine').

@@ -1,4 +1,14 @@
 /*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolas Zarate Hernandez
+ ------------------------------------------------
  * Punto de entrada del engine
  * Lo carga el broker de Java al levantar SWI-Prolog:
  *     swipl -l prolog/engine.pl mqi --write_connection_values=true

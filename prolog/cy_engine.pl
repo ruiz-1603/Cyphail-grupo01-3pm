@@ -31,7 +31,8 @@ cy_db(empresa).
 cy_db(movies).
 cy_db(p1).
 
-% Carpeta de los grafos (graphs/ junto a este archivo), sin importar desde donde se cargue el engine
+% Carpeta de los grafos (graphs/ junto a este archivo) sin importar desde donde se cargue el engine
+
 :- prolog_load_context(directory, Dir),
    atom_concat(Dir, '/graphs', GraphsDir),
    retractall(cy_graphs_dir(_)),
@@ -44,14 +45,16 @@ get_current_graph(G) :-
     current_graph(G).
 
 % .use G: vuelve a cargar el grafo desde graphs/G.pl, asi siempre queda como esta en disco
+
 set_current_graph(G) :-
     cy_db(G),
     cy_load_graph(G),
     (current_graph(_) -> retract(current_graph(_)) ; true),
     assert(current_graph(G)).
 
-% Al recargar un archivo, SWI conserva lo que se agrego con assert a sus predicados dynamic;
+% Al recargar un archivo, SWI conserva lo que se agrego con assert a sus predicados dynamic
 % por eso primero se borran los hechos del grafo y luego se vuelve a cargar el archivo
+
 cy_load_graph(G) :-
     cy_clear_graph(G),
     cy_graphs_dir(Dir),
@@ -85,7 +88,8 @@ cy_ge(X, Y) :- number(X), number(Y), X >= Y.
 %%%%%%%%%%%%%% ciclo de queries
 
 % QueryId llega sin ligar (__QueryId en el goal del CodeGen): gensym le da un id unico
-% (cy_q1, cy_q2, ...) y la clausula se guarda con ese id, como en el ejemplo del SPEC
+% (cy_q1, cy_q2, ...) y la clausula se guarda con ese id como en el ejemplo del SPEC
+
 cy_create_query(QueryId, Clause) :-
     (var(QueryId) -> gensym(cy_q, QueryId) ; true),
     (Clause = (Head :- Body) -> true ; Head = Clause, Body = true),
@@ -100,8 +104,7 @@ cy_erase_query(QueryId) :-
 
 
 %%%%%%%%%%%%%%%%%%%%% formato de tabla
-% Filas separadas por cambio de linea y columnas por tabulador: un valor con espacios
-% ('The Matrix') sigue siendo una sola columna cuando Java parte la fila
+% Filas separadas por cambio de linea y columnas por tab un valor con espacios
 
 cy_join_columns([First | Rest], Text) :-
     format(atom(Init), '~w', [First]),
