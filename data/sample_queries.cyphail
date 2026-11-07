@@ -1,3 +1,6 @@
+// Proyecto Cyphail - Grupo 01-3pm
+// Autores: Priscilla Murillo Romero, Aaron Ruiz Medina, Samael Sanchez Mora,
+//          Daniel Villarroel Abaduca, Nicolas Zarate Hernandez
 // Script de prueba para el comando .load en Sprint P2
 MATCH (m:Movie)
 WHERE m.year > 2000

@@ -1,5 +1,17 @@
 package org.cyphail.parser.result;
 
+/*
+ * Proyecto Cyphail
+ * Grupo 01-3pm
+ *
+ * Autores:
+ * - Priscilla Murillo Romero
+ * - Aaron Ruiz Medina
+ * - Samael Sanchez Mora
+ * - Daniel Villarroel Abaduca
+ * - Nicolás Zárate Hernández
+ */
+
 import org.cyphail.parser.core.Fail;
 import org.cyphail.parser.core.Ok;
 import org.cyphail.parser.core.Result;

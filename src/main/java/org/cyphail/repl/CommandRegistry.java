@@ -145,22 +145,41 @@ public final class CommandRegistry {
         return engine.execute(statement);
     }
 
-    /** Extracts clean statements separated by ';' from a .cyphail script, ignoring comment lines. */
+    /**
+     * Extracts clean statements from a .cyphail script, ignoring comment lines. As in the REPL the ';'
+     * is optional: a statement also ends with a blank line or when a dot-command line starts.
+     */
     public static List<String> parseScriptStatements(String scriptContent) {
         if (scriptContent == null || scriptContent.isBlank()) {
             return List.of();
         }
-        String withoutComments = Arrays.stream(scriptContent.split("\\R"))
+        String separated = Arrays.stream(scriptContent.split("\\R"))
                 .filter(line -> {
                     String trimmed = line.trim();
                     return !trimmed.startsWith("//") && !trimmed.startsWith("--") && !trimmed.startsWith("#");
                 })
+                .map(CommandRegistry::markStatementEnd)
                 .collect(Collectors.joining("\n"));
 
-        return Arrays.stream(withoutComments.split(";"))
+        return Arrays.stream(separated.split(";"))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
+    }
+
+    /*
+     * Una linea en blanco cierra el estatuto anterior; una linea de dot-command abre uno nuevo.
+     * Solo .tree puede seguir en las lineas siguientes (lleva un query); los demas (.use, ...) son de una linea.
+     */
+    private static String markStatementEnd(String line) {
+        String trimmed = line.trim();
+        if (trimmed.isEmpty()) {
+            return ";";
+        }
+        if (!trimmed.startsWith(".")) {
+            return line;
+        }
+        return trimmed.toLowerCase().startsWith(".tree") ? ";" + line : ";" + line + ";";
     }
 
     public static String unquotePath(String rawArg) {
