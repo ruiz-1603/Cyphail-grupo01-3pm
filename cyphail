@@ -1,2 +1,11 @@
 #!/bin/sh
+# Proyecto Cyphail
+# Grupo 01-3pm
+#
+# Autores:
+# - Priscilla Murillo Romero
+# - Aaron Ruiz Medina
+# - Samael Sanchez Mora
+# - Daniel Villarroel Abaduca
+# - Nicolas Zarate Hernandez
 java -jar "$(dirname "$0")/target/cyphail-1.0-SNAPSHOT.jar" "$@"

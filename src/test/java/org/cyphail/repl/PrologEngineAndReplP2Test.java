@@ -38,6 +38,40 @@ class PrologEngineAndReplP2Test {
     }
 
     @Test
+    void semicolonIsOptionalStatementEndsWithBlankLineOrDotCommand() {
+        // Sin ";": la linea en blanco cierra el estatuto
+        Scanner blank = new Scanner("RETURN p.nombre\n\nMATCH (x) RETURN x\n");
+        assertEquals("MATCH (p:Persona)\nRETURN p.nombre", Repl.readQuery(blank, "MATCH (p:Persona)"));
+
+        // Sin ";": un dot-command cierra el estatuto y queda pendiente para ejecutarse
+        Scanner dot = new Scanner(".use empresa\n");
+        Repl.ReadStatement statement = Repl.readStatement(dot, "MATCH (p:Persona) RETURN p.nombre");
+        assertEquals("MATCH (p:Persona) RETURN p.nombre", statement.text());
+        assertEquals(java.util.Optional.of(".use empresa"), statement.pendingLine());
+    }
+
+    @Test
+    void parseScriptStatementsWithoutSemicolons() {
+        String script = """
+                .use empresa
+                MATCH (p:Persona)
+                RETURN p.nombre
+
+                .tree MATCH (p:Persona)
+                RETURN p
+                .use p1
+                MATCH (m:Movie) RETURN m.title;
+                """;
+        assertEquals(List.of(
+                ".use empresa",
+                "MATCH (p:Persona)\nRETURN p.nombre",
+                ".tree MATCH (p:Persona)\nRETURN p",
+                ".use p1",
+                "MATCH (m:Movie) RETURN m.title"),
+                CommandRegistry.parseScriptStatements(script));
+    }
+
+    @Test
     void parseScriptStatementsExtractsQueriesAndIgnoresComments() {
         String script = """
                 // Comment line

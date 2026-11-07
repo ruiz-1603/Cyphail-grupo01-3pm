@@ -21,10 +21,12 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ConnectException;
 import java.net.Socket;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -56,17 +58,42 @@ public class PrologEngine implements Engine {
     private static final long CONNECT_WAIT_MS = 100;
 
     private final String engineScriptPath;
+    // Carpeta desde la que se lanza swipl (engineScriptPath es relativo a ella)
+    private final File workingDir;
     private Process prologProcess;
     private Socket socket;
     private MqiClient mqiClient;
     private String currentGraph;
 
     public PrologEngine() {
-        this(DEFAULT_ENGINE_SCRIPT);
+        this(DEFAULT_ENGINE_SCRIPT, projectRoot());
     }
 
     public PrologEngine(String engineScriptPath) {
+        this(engineScriptPath, new File("."));
+    }
+
+    private PrologEngine(String engineScriptPath, File workingDir) {
         this.engineScriptPath = engineScriptPath;
+        this.workingDir = workingDir;
+    }
+
+    /*
+     * Raiz del proyecto: la carpeta que contiene target/ (alli esta el jar, o target/classes en los tests).
+     * Asi el engine arranca aunque cyphail se ejecute desde otra carpeta. Si no se encuentra
+     * prolog/engine.pl alli (por ejemplo, el jar se copio a otro lugar) se usa la carpeta actual.
+     */
+    private static File projectRoot() {
+        File currentDir = new File(".");
+        try {
+            File code = new File(PrologEngine.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            return Optional.ofNullable(code.getParentFile())
+                    .map(File::getParentFile)
+                    .filter(root -> new File(root, DEFAULT_ENGINE_SCRIPT).isFile())
+                    .orElse(currentDir);
+        } catch (URISyntaxException e) {
+            return currentDir;
+        }
     }
 
     /** Starts the SWI-Prolog MQI server process and authenticates the client socket if not already started. */
@@ -81,7 +108,7 @@ public class PrologEngine implements Engine {
                 "--write_connection_values=true"
         );
         pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-        pb.directory(new File("."));
+        pb.directory(workingDir);
 
         this.prologProcess = pb.start();
         var prologStdout = new BufferedReader(

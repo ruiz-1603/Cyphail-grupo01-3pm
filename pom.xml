@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Proyecto Cyphail
+  Grupo 01-3pm
+
+  Autores:
+  - Priscilla Murillo Romero
+  - Aaron Ruiz Medina
+  - Samael Sanchez Mora
+  - Daniel Villarroel Abaduca
+  - Nicolas Zarate Hernandez
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -44,6 +55,8 @@
                         <phase>package</phase>
                         <goals><goal>shade</goal></goals>
                         <configuration>
+                            <!-- no generar dependency-reduced-pom.xml en la raiz del proyecto -->
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>org.cyphail.Main</mainClass>

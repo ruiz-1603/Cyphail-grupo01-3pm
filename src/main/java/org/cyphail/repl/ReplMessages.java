@@ -40,7 +40,7 @@ public final class ReplMessages {
                 "  .load      - Load, parse, and execute a .cyphail script file",
                 "             - Usage: .load \"path/to/script.cyphail\"",
                 "",
-                "Query Examples (multiline statements end with ';'):",
+                "Query Examples (statements end with ';' or a blank line; the ';' is optional):",
                 "  MATCH (m:Movie) WHERE m.year > 2000 RETURN m.title;",
                 "  MATCH (p:Person) RETURN p.name, p.age;",
                 "");

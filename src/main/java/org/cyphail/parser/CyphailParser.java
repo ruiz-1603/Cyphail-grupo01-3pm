@@ -11,10 +11,12 @@ import org.cyphail.parser.core.Fail;
 import org.cyphail.parser.core.TokenString;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /*
  * Proyecto Cyphail
@@ -128,7 +130,7 @@ public final class CyphailParser {
         };
 
         return Parsers.RFlat(Parsers.Or(variable, source -> new Ok<>(Optional.empty(), source)),
-                reasons -> String.join(", ", reasons));
+                CyphailParser::joinReasons);
     }
 
     // nodeLabels := (":" labelName)*
@@ -200,7 +202,7 @@ public final class CyphailParser {
         };
 
         return Parsers.RFlat(Parsers.Or(oneType, source -> new Ok<>(List.of(), source)),
-                reasons -> String.join(", ", reasons));
+                CyphailParser::joinReasons);
     }
 
     // relationshipDetail := "[" variable? relTypes? relProperties? "]"
@@ -262,7 +264,7 @@ public final class CyphailParser {
             case Ok(TokenString dash, InputString rest) -> new Ok<>(Direction.NONE, rest);
         };
 
-        return Parsers.RFlat(Parsers.Or(out, none), reasons -> String.join(", ", reasons));
+        return Parsers.RFlat(Parsers.Or(out, none), CyphailParser::joinReasons);
     }
 
     // relationshipPattern := "<-" relationshipDetail? "-"
@@ -311,7 +313,7 @@ public final class CyphailParser {
             }
         };
 
-        return Parsers.RFlat(Parsers.Or(incoming, outgoingOrUndirected), reasons -> String.join(", ", reasons));
+        return Parsers.RFlat(Parsers.Or(incoming, outgoingOrUndirected), CyphailParser::joinReasons);
     }
 
     // patternElement := node (relationshipPattern node)?
@@ -406,7 +408,7 @@ public final class CyphailParser {
     // (decimal antes que number: si no, "25.5" se leeria como 25 y quedaria ".5")
     static Parser<InputString, Expr, String> simpleExpr() {
         return Parsers.RFlat(Parsers.Or(property(), decimal(), number(), stringExpr(), booleanExpr()),
-                reasons -> String.join(", ", reasons)
+                CyphailParser::joinReasons
         );
     }
 
@@ -495,7 +497,7 @@ public final class CyphailParser {
                 };
 
         return Parsers.RFlat(Parsers.Or(withAlias, source -> new Ok<>(Optional.empty(), source)),
-                reasons -> String.join(", ", reasons));
+                CyphailParser::joinReasons);
     }
 
     // variableExpr := ID   (variable "pelada", sin propiedad; p.ej. RETURN q AS name)
@@ -511,7 +513,7 @@ public final class CyphailParser {
 
     // projectionExpr := property | variableExpr
     static Parser<InputString, Expr, String> projectionExpr() {
-        return Parsers.RFlat(Parsers.Or(property(), variableExpr()), reasons -> String.join(", ", reasons));
+        return Parsers.RFlat(Parsers.Or(property(), variableExpr()), CyphailParser::joinReasons);
     }
 
     // item := projectionExpr alias
@@ -574,7 +576,7 @@ public final class CyphailParser {
                         Lexers.Symbol("<"),
                         Lexers.Symbol(">")
                 ),
-                reasons -> String.join(", ", reasons)
+                CyphailParser::joinReasons
         );
 
         return (InputString source) -> {
@@ -620,7 +622,7 @@ public final class CyphailParser {
         };
 
         return Parsers.RFlat(Parsers.Or(parenthesized, simpleExpr(), variableExpr()),
-                reasons -> String.join(", ", reasons));
+                CyphailParser::joinReasons);
     }
 
     // comparison := atom (comparisonOp atom)*   ->  a < b < c se agrupa a la izquierda
@@ -826,7 +828,7 @@ public final class CyphailParser {
             case Ok(SetLabels labels, InputString rest) -> new Ok<>(labels, rest);
         };
 
-        return Parsers.RFlat(Parsers.Or(setProperty, setLabels), reasons -> String.join(", ", reasons));
+        return Parsers.RFlat(Parsers.Or(setProperty, setLabels), CyphailParser::joinReasons);
     }
 
     // variable nodeLabels   (al menos una etiqueta), p.ej. p:Vip:Activo
@@ -883,7 +885,7 @@ public final class CyphailParser {
             case Ok(Expr target, InputString rest) -> new Ok<>(new RemoveProperty((PropertyAccess) target), rest);
         };
 
-        return Parsers.RFlat(Parsers.Or(removeLabels, removeProperty), reasons -> String.join(", ", reasons));
+        return Parsers.RFlat(Parsers.Or(removeLabels, removeProperty), CyphailParser::joinReasons);
     }
 
     // remove := "REMOVE" removeItem ("," removeItem)*
@@ -907,7 +909,7 @@ public final class CyphailParser {
     static Parser<InputString, UpdateClause, String> updatingClause() {
         return Parsers.RFlat(
                 Parsers.Or(createClause(), setClause(), deleteClause(), removeClause()),
-                reasons -> String.join(", ", reasons));
+                CyphailParser::joinReasons);
     }
 
     // Una clausula de actualizacion empieza con una de estas palabras clave
@@ -1042,6 +1044,18 @@ public final class CyphailParser {
                 }
             }
         };
+    }
+
+    /*
+     * Junta las razones de falla de un Or en un solo mensaje (lo usan todos los RFlat de la gramatica).
+     * Cada razon puede venir ya unida con ", " desde un Or interno: se separa y se quitan las
+     * repetidas, asi el mensaje no dice dos veces "No id could be matched at position N".
+     */
+    static String joinReasons(List<String> reasons) {
+        return reasons.stream()
+                .flatMap(reason -> Arrays.stream(reason.split(", ")))
+                .distinct()
+                .collect(Collectors.joining(", "));
     }
 
     public static Result<InputString, Query, String> parse(String text) {

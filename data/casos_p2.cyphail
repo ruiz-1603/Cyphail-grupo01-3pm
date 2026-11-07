@@ -1,6 +1,10 @@
+// Proyecto Cyphail - Grupo 01-3pm
+// Autores: Priscilla Murillo Romero, Aaron Ruiz Medina, Samael Sanchez Mora,
+//          Daniel Villarroel Abaduca, Nicolas Zarate Hernandez
 // Casos de referencia Sprint P2 (EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md)
 // Uso desde el repl:  .load "data/casos_p2.cyphail"
-// Los casos 7, 8 y 9 (CREATE / DELETE) se ven con .tree pero no se ejecutan (alcance P2: MATCH, WHERE, RETURN)
+// Los casos 7, 8, 9, 11 y 12 (CREATE / DELETE / SET / REMOVE) se ven con .tree pero no se ejecutan
+// (alcance P2 indicado en clase: MATCH, WHERE, RETURN). Numeracion de la Guia de Revision P2 (C0 a C12).
 .use empresa;
 
 // CASO 1: -[var]-> sin tipo, RETURN de la relacion (su id)
@@ -58,3 +62,17 @@ MATCH (p:Persona)-[:TRABAJA_EN]->(e:Empresa),
       (c:Persona)-[:TRABAJA_EN]->(e)
 WHERE p.nombre <> c.nombre
 RETURN p.nombre, c.nombre, e.nombre;
+
+// CASO 8c: patrones desconectados (producto cartesiano, una relacion no se usa dos veces)
+MATCH (a)-[r]->(b), (c)-[s]->(d)
+RETURN r, s;
+
+// CASO 11 (Guia P2): SET multiple (solo arbol)
+.tree MATCH (u:Student {id: "4-666-000"})-[r:attends]->(c:Course {nrc: "50691"})
+SET r.grade = 9.5, u.activo = true, c.cupo = 30
+RETURN u.id, r.grade;
+
+// CASO 12 (Guia P2): REMOVE multiple (solo arbol)
+.tree MATCH (p:Product {code: "PROD-99"})
+REMOVE p.discount, p.promo, p:Oferta
+RETURN p.id;
