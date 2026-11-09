@@ -233,26 +233,36 @@ public class PrologEngine implements Engine {
         }
     }
 
-    /** Formats a PrologResult containing the {@code Rows} binding into a tabular string. */
+    /**
+     * Formats a PrologResult containing the {@code Rows} binding into a tabular string.
+     * A query with CREATE/SET/REMOVE/DELETE also has the {@code Stats} binding (summary of changes);
+     * without RETURN there are no columns, so only the summary is shown.
+     */
     public static String formatPrologResult(PrologResult result, List<String> columns, long elapsedMs) {
         return switch (result) {
             case PrologResult.Success(var rows) -> {
-                String rowsText = extractRowsText(rows);
-                String[][] tableData = toTableMatrix(rowsText, columns);
-                int solutionCount = Math.max(0, tableData.length - 1);
-                String table = TableFormatter.formatTable(tableData);
-                yield table + "\n(" + solutionCount + " row(s))\nOK. Query resolved after " + elapsedMs + " ms.\n";
+                String table = columns.isEmpty() ? "" : formatTable(binding(rows, GeneratedQuery.ROWS), columns);
+                String stats = binding(rows, GeneratedQuery.STATS);
+                String summary = stats.isEmpty() ? "" : stats + "\n";
+                yield table + summary + "OK. Query resolved after " + elapsedMs + " ms.\n";
             }
             case PrologResult.Failure() -> "Failure (no solutions)\n";
             case PrologResult.PrologError(Object term) -> "ERROR: Prolog exception: " + term;
         };
     }
 
-    private static String extractRowsText(List<Map<String, Object>> rows) {
+    private static String formatTable(String rowsText, List<String> columns) {
+        String[][] tableData = toTableMatrix(rowsText, columns);
+        int solutionCount = Math.max(0, tableData.length - 1);
+        return TableFormatter.formatTable(tableData) + "\n(" + solutionCount + " row(s))\n";
+    }
+
+    // Valor de una variable de la respuesta MQI (Rows, Stats); "" si no esta
+    private static String binding(List<Map<String, Object>> rows, String variable) {
         if (rows == null || rows.isEmpty()) {
             return "";
         }
-        Object raw = rows.getFirst().get(GeneratedQuery.ROWS);
+        Object raw = rows.getFirst().get(variable);
         return raw != null ? raw.toString() : "";
     }
 

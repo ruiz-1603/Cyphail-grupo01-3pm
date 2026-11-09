@@ -1,0 +1,88 @@
+// Proyecto Cyphail - Grupo 01-3pm
+// Autores: Priscilla Murillo Romero, Aaron Ruiz Medina, Samael Sanchez Mora,
+//          Daniel Villarroel Abaduca, Nicolas Zarate Hernandez
+// Ejemplos del SPEC P2 (EIF400-II-2026-SPEC-Sprint-P2-Preliminar-CLoria.md)
+// Uso desde el repl:  .load "data/spec_p2.cyphail"
+// II.3 y el ejemplo del transpilador corren sobre empresa y amigos; los de II.4 (CREATE, SET,
+// REMOVE, DELETE) sobre el grafo revision. Despues de cada cambio se muestra el resultado
+// con un MATCH y .use vuelve a cargar el grafo desde su archivo.
+
+// II.3: patron de relaciones con variable de join
+.use empresa;
+MATCH (p:Persona)-[:TRABAJA_EN]->(e:Empresa),
+      (c:Persona)-[:TRABAJA_EN]->(e)
+WHERE p.nombre <> c.nombre
+RETURN p.nombre, c.nombre, e.nombre;
+
+// CodeGen como transpilador (grafo amigos): Ana (28) y Luis (31) son amigos mutuos pero
+// con edades distintas, asi que a.age = b.age deja 0 filas
+.use amigos;
+MATCH (a) -[:amigo]-> (b),
+      (b) -[:amigo]-> (a)
+WHERE a.age > 18 AND a.age = b.age
+RETURN a.name, b.name;
+
+// Sin la condicion de edad igual salen las dos filas del par mutuo
+MATCH (a) -[:amigo]-> (b),
+      (b) -[:amigo]-> (a)
+WHERE a.age > 18
+RETURN a.name, b.name;
+
+// II.4: MATCH + CREATE de una relacion entre nodos existentes
+.use revision;
+MATCH (a:Autor {nombre: 'Bill Gates'}),
+      (b:Libro {titulo: 'Fake Windows Millenium'})
+CREATE (a)-[:ESCRIBIO]->(b);
+
+MATCH (a:Autor)-[r:ESCRIBIO]->(b:Libro)
+RETURN a.nombre, r, b.titulo;
+
+.use revision;
+
+// II.4: CREATE sin MATCH previo
+CREATE (a:Persona {nombre: 'Marta'})
+    -[r:TRABAJA_EN {rol: 'Dev'}]->(e:Empresa
+                                {nombre: 'UCR'})
+RETURN a, r, e;
+
+MATCH (a:Persona)-[r:TRABAJA_EN]->(e:Empresa)
+RETURN a.nombre, r.rol, e.nombre;
+
+.use revision;
+
+// II.4: DELETE de una relacion con WHERE (solo Ana -> Luis, 1995)
+MATCH (a:Person:Female)-[r:KNOWS]->(b:Person:Male)
+WHERE r.since < 2000
+DELETE r;
+
+MATCH (a:Person)-[r:KNOWS]->(b:Person)
+RETURN a.name, b.name, r.since;
+
+.use revision;
+
+// II.4: SET de una propiedad nueva
+MATCH (p:Product {code: "PROD-99"})
+SET p.precio = 19.99
+RETURN p;
+
+MATCH (p:Product {code: "PROD-99"})
+RETURN p.id, p.precio;
+
+.use revision;
+
+// II.4: REMOVE de una propiedad
+MATCH (p:Product {code: "PROD-99"})
+REMOVE p.discount
+RETURN p.id;
+
+.use revision;
+
+// II.4: SET sobre una relacion
+MATCH
+(u:Student {id: "4-666-000"})
+-[r:attends]->
+(c:Course {nrc: "50691"})
+SET r.grade = 9.5
+RETURN u.id, r.grade;
+
+.use revision;

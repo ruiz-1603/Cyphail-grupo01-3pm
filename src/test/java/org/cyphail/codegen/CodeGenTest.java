@@ -153,24 +153,70 @@ class CodeGenTest {
     }
 
     @Test
-    void createNoSeTranspilaEnP2() {
-        // MATCH (a:Person) CREATE (b:Person) RETURN b
+    void createDespuesDelMatchYAntesDelReturn() {
+        // MATCH (a:Person) CREATE (b:Person {name: a.name}) RETURN b
         var q = query(List.of(node("a", List.of("Person"))), Optional.empty(),
-                List.of(new CreateClause(List.of(node("b", List.of("Person"))))),
+                List.of(new CreateClause(List.of(node("b", List.of("Person"),
+                        new PropertyEntry("name", prop("a", "name")))))),
                 item(new Var("b")));
 
-        var error = assertThrows(CodeGenException.class, () -> CodeGen.generate(q, "amigos"));
-        assertEquals("CREATE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)", error.getMessage());
+        var gen = CodeGen.generate(q, "amigos");
+
+        assertEquals("cy_row(__B)", gen.head());
+        assertEquals(List.of(
+                "user_amigos_node(__A)",
+                "user_amigos_label(__A, 'Person')",
+                "cy_new_node(amigos, __B)",
+                "cy_add_label(amigos, __B, 'Person')",
+                "user_amigos_prop(__A, name, __A_name)",
+                "cy_set_prop(amigos, __B, name, __A_name)"), gen.body());
+        assertTrue(gen.updates());
     }
 
     @Test
-    void deleteNoSeTranspilaEnP2() {
-        // MATCH (r:Robot) DELETE r RETURN r
-        var q = query(List.of(node("r", List.of("Robot"))), Optional.empty(),
-                List.of(new DeleteClause(List.of("r"))), item(new Var("r")));
+    void deleteDeUnNodo() {
+        // MATCH (r:Robot) DELETE r
+        var q = new Query(Optional.of(new MatchClause(List.of(node("r", List.of("Robot"))))), Optional.empty(),
+                List.of(new DeleteClause(List.of("r"))), Optional.empty());
+
+        var gen = CodeGen.generate(q, "amigos");
+
+        assertEquals("cy_row", gen.head());
+        assertEquals("cy_delete(amigos, __R)", gen.body().getLast());
+        assertEquals(List.of(), gen.columns());
+    }
+
+    @Test
+    void detachDelete() {
+        // MATCH (r:Robot) DETACH DELETE r
+        var q = new Query(Optional.of(new MatchClause(List.of(node("r", List.of("Robot"))))), Optional.empty(),
+                List.of(new DeleteClause(true, List.of("r"))), Optional.empty());
+
+        assertEquals("cy_detach_delete(amigos, __R)", CodeGen.generate(q, "amigos").body().getLast());
+    }
+
+    @Test
+    void goalConActualizacionesYSinReturn() {
+        // MATCH (r:Robot) DELETE r: contadores antes, cy_run_query (no hay tabla) y el resumen en Stats
+        var q = new Query(Optional.of(new MatchClause(List.of(node("r", List.of("Robot"))))), Optional.empty(),
+                List.of(new DeleteClause(List.of("r"))), Optional.empty());
+
+        assertEquals("cy_reset_stats, "
+                        + "cy_create_query(__QueryId, (cy_row :- "
+                        + "user_amigos_node(__R), user_amigos_label(__R, 'Robot'), cy_delete(amigos, __R))), "
+                        + "cy_run_query(__QueryId), "
+                        + "cy_erase_query(__QueryId), "
+                        + "cy_stats(Stats)",
+                CodeGen.generate(q, "amigos").goal());
+    }
+
+    @Test
+    void sinMatchNiActualizacionesFalla() {
+        var q = new Query(Optional.empty(), Optional.empty(), List.of(),
+                Optional.of(new ReturnClause(new Projection(List.of(item(new NumberLit(1))), List.of()))));
 
         var error = assertThrows(CodeGenException.class, () -> CodeGen.generate(q, "amigos"));
-        assertEquals("DELETE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)", error.getMessage());
+        assertEquals("A query without MATCH is not supported yet", error.getMessage());
     }
 
     @Test

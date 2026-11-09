@@ -2,7 +2,8 @@
 // Casos de prueba del Sprint P1 (EIF400-II-2026-SPEC-Sprint-P1-Casos de Prueba-CLoria.md)
 // "Todo P1 debe funcionar" (Guia de Revision P2). Uso desde el repl:  .load "data/casos_p1.cyphail"
 // Grafo p1 = los datos de los JSON de P1 (prolog/graphs/p1.pl).
-// Los casos con CREATE / DELETE (7, 9, 11, 12) se muestran con .tree: en P2 solo se ejecutan MATCH, WHERE y RETURN.
+// Los casos 7 y 9 (CREATE / DELETE) se ejecutan; despues de cada uno se muestra el cambio y .use p1
+// vuelve a cargar el grafo. Los casos 10, 11 y 12 muestran el arbol y el error semantico esperado.
 .use p1;
 
 // CASO 1 Un patron y proyeccion con un alias
@@ -40,24 +41,37 @@ WHERE m.year <> p.age
 RETURN m.title AS title,
        p.name AS name;
 
-// CASO 7 Match un patron y create (solo arbol)
-.tree MATCH (p:Person)
+// CASO 7 Match un patron y create (un Certificate por cada fila del MATCH)
+MATCH (p:Person)
 WHERE p.age > 18
 CREATE (c:Certificate {issuedTo: "adult", year: 2026})
 RETURN p.name AS name,
        p.age AS age;
+
+MATCH (c:Certificate)
+RETURN c, c.issuedTo, c.year;
+
+.use p1;
 
 // CASO 8 Match con patron de property expresion simple
 MATCH (p:Person {id: 1}), (o:Order {personId: p.id})
 RETURN p.name AS name,
        o.total AS total;
 
-// CASO 9 Match create delete (solo arbol)
-.tree MATCH (p:Person), (o:Order {personId: p.id, status: "cancelled"})
+// CASO 9 Match create delete (archiva la orden cancelada y la borra)
+MATCH (p:Person), (o:Order {personId: p.id, status: "cancelled"})
 WHERE p.age > 60
 CREATE (a:Archive {id: o.id, name: "retired", year: 2026})
 DELETE o
 RETURN p.name AS name;
+
+MATCH (a:Archive)
+RETURN a.id, a.name, a.year;
+
+MATCH (o:Order)
+RETURN o.id, o.status;
+
+.use p1;
 
 // CASO 10 Deteccion de variables no definidas (arbol + error)
 .tree MATCH (p:Person), (o:Order {personId: p.id, status: "cancelled"})

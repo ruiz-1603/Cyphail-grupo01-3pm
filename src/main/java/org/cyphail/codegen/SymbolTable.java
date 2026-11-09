@@ -34,7 +34,7 @@ public record SymbolTable(Map<String, String> variables,
                           Set<String> used) {
 
     /** Nombres que usa el goal externo (ver GeneratedQuery.goal()); ninguna variable del query puede tomarlos. */
-    public static final Set<String> RESERVED = Set.of(GeneratedQuery.QUERY_ID, GeneratedQuery.ROWS);
+    public static final Set<String> RESERVED = Set.of(GeneratedQuery.QUERY_ID, GeneratedQuery.ROWS, GeneratedQuery.STATS);
 
     public SymbolTable {
         // Copias defensivas que conservan el orden de insercion
@@ -69,6 +69,17 @@ public record SymbolTable(Map<String, String> variables,
         var owner = variable(variable).orElseThrow(() -> CodeGenException.undefinedVariable(variable));
         var prologName = fresh(owner + "_" + property);
         return new SymbolTable(variables, put(properties, key, prologName), add(used, prologName));
+    }
+
+    /**
+     * Olvida el calculo variable.property: despues de un SET o REMOVE el valor cambio y,
+     * si se vuelve a usar (por ejemplo en el RETURN), se pide de nuevo al grafo.
+     * El nombre Prolog anterior sigue ocupado, asi el nuevo calculo recibe otro (__A_edad_2).
+     */
+    public SymbolTable withoutProperty(String variable, String property) {
+        var copy = new LinkedHashMap<>(properties);
+        copy.remove(propertyKey(variable, property));
+        return new SymbolTable(variables, copy, used);
     }
 
     /**

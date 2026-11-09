@@ -198,17 +198,29 @@ Each graph `G` is a set of Prolog facts, as if it had been created from the REPL
 | `user_G_edge(EId, Type, From, To)` | directed relationship |
 | `user_G_prop(NodeOrEdgeId, Key, Value)` | property of a node or a relationship |
 
-Graphs: `prolog/graphs/amigos.pl`, `prolog/graphs/empresa.pl` (used by the P2 reference cases: `TRABAJA_EN`, `CONOCE`, `SOCIO_DE`), `prolog/graphs/movies.pl` and `prolog/graphs/p1.pl` (the data of the Sprint P1 JSON files: `Movie`, `Book`, `Person`, `Order`, `Client`, used by the P1 cases). To add a graph, create `prolog/graphs/g.pl`, declare `cy_db(g)` in `cy_engine.pl` and load it in `engine.pl`.
+Graphs: `prolog/graphs/amigos.pl`, `prolog/graphs/empresa.pl` (used by the P2 reference cases: `TRABAJA_EN`, `CONOCE`, `SOCIO_DE`), `prolog/graphs/movies.pl`, `prolog/graphs/p1.pl` (the data of the Sprint P1 JSON files: `Movie`, `Book`, `Person`, `Order`, `Client`, used by the P1 cases) and `prolog/graphs/revision.pl` (`Student`-`attends`->`Course`, `Product`, `Autor`/`Libro` and `Person:Female`-`KNOWS`->`Person:Male`, used by cases C11 and C12 of the P2 review sheet and by the update examples of SPEC P2 II.4). To add a graph, create `prolog/graphs/g.pl`, declare `cy_db(g)` in `cy_engine.pl` and load it in `engine.pl`.
 
 `.use G` always **reloads** the graph (`set_current_graph/1` -> `cy_load_graph/1`): it first removes the `user_G_*` facts in memory (`retractall`) and then consults `graphs/G.pl` again, so the graph is always exactly what the file says.
 
 The runtime (`cy_engine.pl`) provides the comparators `cy_eq cy_neq cy_lt cy_gt cy_le cy_ge`, the query cycle `cy_create_query/2 → cy_exec_query/3 → cy_erase_query/1` and the table formatting (`cy_format_table`).
 
+It also provides the **updates** used by `CREATE`, `SET`, `REMOVE` and `DELETE` (they `assertz`/`retract` the `user_G_*` facts, which are `dynamic`):
+
+| Predicate | Used by |
+|-----------|---------|
+| `cy_new_node(G, Id)`, `cy_new_edge(G, Id, Type, From, To)` | `CREATE` (new ids `cy_n1`, `cy_r1`, ...) |
+| `cy_set_prop(G, Id, Key, Value)`, `cy_add_label(G, Id, Label)` | `CREATE {k: v}`, `SET x.k = v`, `SET x:L` |
+| `cy_remove_prop(G, Id, Key)`, `cy_remove_label(G, Id, Label)` | `REMOVE x.k`, `REMOVE x:L` |
+| `cy_delete(G, Id)`, `cy_detach_delete(G, Id)` | `DELETE x` (a node with relationships is an error), `DETACH DELETE x` |
+| `cy_reset_stats/0`, `cy_stats(Text)` | summary of changes shown by the REPL (`1 node(s) created, 2 property(ies) set`) |
+
+Changes live **in memory only**: `.use G` reloads the graph from its file, so a demo can always start again from the same data.
+
 ---
 
 ## Test Cases (Sprint P1: C1 to C12)
 
-"Todo P1 debe funcionar" (P2 review sheet): the twelve P1 cases run on the `p1` graph with `.load "data/casos_p1.cyphail"`. Cases 1-6 and 8 are executed (for example C2 -> `The Great Gatsby 180`, C3 -> `Priscilla 35`, C8 -> `Priscilla 50000`); cases 7 and 9 contain `CREATE`/`DELETE`, so they are shown with `.tree` (P2 scope); cases 10-12 show the tree and the semantic error.
+"Todo P1 debe funcionar" (P2 review sheet): the twelve P1 cases run on the `p1` graph with `.load "data/casos_p1.cyphail"`. Cases 1-9 are executed (for example C2 -> `The Great Gatsby 180`, C3 -> `Priscilla 35`, C8 -> `Priscilla 50000`); C7 creates one `Certificate` per adult (4 nodes) and C9 archives Samael's cancelled order and deletes it (after each one the script shows the change and reloads the graph with `.use p1`); cases 10-12 show the tree and the semantic error.
 
 The parser and AST validator support the complete suite of required test cases:
 
@@ -249,7 +261,7 @@ RETURN b.clientId AS id, b.level AS badgeLevel
 
 ## Test Cases (Sprint P2: reference cases)
 
-Cases from `EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md`, executed on the `empresa` graph. All of them can be run with `.load "data/casos_p2.cyphail"`; the exact ASTs are checked in `CyphailParserP2Test`.
+Cases from `EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md`, executed on the `empresa` graph (C11 and C12 on the `revision` graph). All of them can be run with `.load "data/casos_p2.cyphail"`; the exact ASTs are checked in `CyphailParserP2Test`. After each case that changes the graph, the script shows the change with a `MATCH` and reloads the graph with `.use`, so the following cases always see the same data. C7 uses Marta and Pedro instead of Ana and Luis, who are not in `empresa` (review sheet: *"su caso se ajusta al ejemplo de grafo ya disponible en el engine"*).
 
 | Case | What it exercises | Status |
 |------|-------------------|--------|
@@ -259,14 +271,16 @@ Cases from `EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md`, executed on
 | **4** | Relationship properties `{desde: 2015}` and `r.desde` in RETURN | ✅ Parsed and executed |
 | **5** | WHERE on relationship and node properties with `AND` | ✅ Parsed and executed |
 | **6** | Inline properties + WHERE with `OR` / `NOT`, strings with `'...'` | ✅ Parsed and executed |
-| **7** | MATCH with two patterns + `CREATE` reusing variables | ✅ Parsed, shown with `.tree` (not executed, see P2 scope) |
-| **8** | `CREATE` without MATCH, boolean `true`, `RETURN a, r, e` | ✅ Parsed, shown with `.tree` (not executed) |
-| **9** | `DELETE r` of a relationship with WHERE | ✅ Parsed, shown with `.tree` (not executed) |
+| **7** | MATCH with two patterns + `CREATE` reusing variables | ✅ Executed: `1 relationship(s) created, 2 property(ies) set` |
+| **8** | `CREATE` without MATCH, boolean `true`, `RETURN a, r, e` | ✅ Executed: 2 nodes + 1 relationship, returns their new ids |
+| **9** | `DELETE r` of a relationship with WHERE | ✅ Executed: `1 relationship(s) deleted` (Lucia → Marta, 1998) |
 | **10** | Three patterns with shared variables, parentheses, `AND`/`OR`/`NOT`, decimals | ✅ Parsed and executed |
 | **8b** | Two patterns sharing `e` (join variable without repeating the label) | ✅ Parsed and executed |
 | **8c** | Disconnected patterns (cartesian product; one edge is never used twice) | ✅ Parsed and executed |
-| **11** (review sheet) | Multiple `SET` items (`SET r.grade = 9.5, u.activo = true, ...`) | ✅ Parsed, shown with `.tree` (not executed) |
-| **12** (review sheet) | Multiple `REMOVE` items (`REMOVE p.discount, p.promo, p:Oferta`) | ✅ Parsed, shown with `.tree` (not executed) |
+| **11** (review sheet) | Multiple `SET` items (`SET r.grade = 9.5, u.activo = true, ...`) | ✅ Executed on `revision`: `3 property(ies) set` |
+| **12** (review sheet) | Multiple `REMOVE` items (`REMOVE p.discount, p.promo, p:Oferta`) | ✅ Executed on `revision`: `2 property(ies) removed, 1 label(s) removed` |
+
+**SPEC P2 examples:** `.load "data/spec_p2.cyphail"` runs every example of the SPEC: the relationship pattern of II.3 (`empresa`), the transpiler example (`amigos`) and the six update examples of II.4 (`revision`: `CREATE (a)-[:ESCRIBIO]->(b)` between Bill Gates and his book, `CREATE` without `MATCH`, `DELETE r` of the `KNOWS` edge of 1995, `SET p.precio = 19.99`, `REMOVE p.discount` and `SET r.grade = 9.5`).
 
 **Validations defined by the team** (the reference document asks to fix them with a test):
 - **Repeated label:** a node variable reused with *different* labels (`(e:Empresa)` … `(e:Ciudad)`) is an error; reusing it without a label (`(e)`) is valid (`VariableValidatorTest`).
@@ -324,6 +338,11 @@ The engine binds `Rows` to the table as text (`header\nrow1\nrow2...`, columns s
 | `x AND y` / `x OR y` / `NOT x` | `x, y` / `once((x ; y))` / `\+ (x)` |
 | `RETURN a.name AS nombre` | argument `__A_name` of `cy_row`, column `nombre` |
 | `RETURN a` / `RETURN r` | argument `__A` / `__R`: only the node or relationship id (P2 restriction) |
+| `CREATE (a:L {k: v})` (new `a`) | `cy_new_node(G, __A), cy_add_label(G, __A, 'L'), cy_set_prop(G, __A, k, v)` |
+| `CREATE (a)-[r:T {k: v}]->(b)` | `a`/`b` reused if already declared, then `cy_new_edge(G, __R, 'T', __A, __B), cy_set_prop(G, __R, k, v)` |
+| `SET x.k = v` / `SET x:L` | `cy_set_prop(G, __X, k, v)` / `cy_add_label(G, __X, 'L')` |
+| `REMOVE x.k` / `REMOVE x:L` | `cy_remove_prop(G, __X, k)` / `cy_remove_label(G, __X, 'L')` |
+| `DELETE x` / `DETACH DELETE x` | `cy_delete(G, __X)` / `cy_detach_delete(G, __X)` |
 
 `G` is the current graph. A property is fetched only once even if it is used several times; a row whose property is missing is discarded. Each `OR` branch fetches the properties it uses, so `a OR b` holds when only one side has the property; `once` keeps a row from appearing twice when both sides hold.
 
@@ -333,13 +352,19 @@ The engine binds `Rows` to the table as text (`header\nrow1\nrow2...`, columns s
 
 - Cyphail variables become Prolog variables with the `__` prefix and the first letter in uppercase: `a` → `__A`, `persona` → `__Persona`. That is why a Cyphail variable cannot start with `__` (SPEC II.7).
 - Property computations get their own variable: `a.name` → `__A_name`.
-- `SymbolTable` keeps these associations to build the final table in Java, and resolves collisions with a `_N` suffix (`a` and `A` → `__A`, `__A_2`). `__QueryId` and `Rows` are reserved.
+- `SymbolTable` keeps these associations to build the final table in Java, and resolves collisions with a `_N` suffix (`a` and `A` → `__A`, `__A_2`). `__QueryId`, `Rows` and `Stats` are reserved.
 
-### P2 scope
+### Updates (CREATE, SET, REMOVE, DELETE)
 
-As indicated by the professor in class (and in the exercises of session 23/10: *"al inicio nos vamos a concentrar en queries por encima de 'updates' por razones de tiempo"*), only read queries (`MATCH`, `WHERE`, `RETURN`) are executed. `CREATE`, `SET`, `REMOVE` and `DELETE` are parsed, validated and shown by `.tree`, but `CodeGen` rejects them with a `CodeGenException` (`"CREATE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)"`).
+The update goals go **after** the `MATCH`/`WHERE` goals and **before** the `RETURN` ones, in the order of the query. Since the engine collects every solution, each update runs **once per row** of the `MATCH`, as in Cypher (C7 of P1 creates one `Certificate` per adult). A query without `MATCH` (`CREATE ... RETURN ...`) runs once.
 
-Out of the sprint (per the reference cases document): chained patterns (more than one relationship in the same pattern), variable length `*1..3`, alternative types `:A|B`, `DETACH DELETE`.
+- After `SET x.k` or `REMOVE x.k` the old value of `x.k` is forgotten in the symbol table, so a later `RETURN x.k` reads the new value (`__X_k_2`).
+- A query with updates is wrapped as `cy_reset_stats, ..., cy_stats(Stats)`; the REPL shows the summary after the table. Without `RETURN` there is no table: `cy_run_query/1` only runs the rows and the summary is shown.
+- `CREATE` follows Cypher: a relationship needs exactly one type and a direction; a variable already declared is reused but cannot get new labels or properties (use `SET`).
+- `DELETE` of a node that still has relationships fails (`Cannot delete node ... use DETACH DELETE`); deleting a relationship never touches its nodes.
+- **Known limitation:** there are no transactions; if a `DELETE` fails on a later row, the changes of the previous rows stay (`.use G` restores the graph).
+
+Out of the sprint (per the reference cases document): chained patterns (more than one relationship in the same pattern), variable length `*1..3`, alternative types `:A|B`, `DETACH DELETE`. The parser does not accept `DETACH DELETE`, but `CodeGen` (`DeleteClause(true, ...)`) and the engine (`cy_detach_delete/2`) already support it.
 
 ---
 
@@ -354,11 +379,12 @@ Cyphail-grupo01-3pm/
 ├── data/                                     # .cyphail scripts for .load
 │   ├── casos_p1.cyphail                      # P1 cases (graph p1)
 │   ├── casos_p2.cyphail                      # P2 reference cases
+│   ├── spec_p2.cyphail                       # examples of the SPEC P2 (II.3, II.4, transpiler)
 │   └── sample_queries.cyphail
 ├── prolog/                                   # SWI-Prolog engine
 │   ├── engine.pl                             # Entry point loaded by the broker
-│   ├── cy_engine.pl                          # Runtime: comparators, query cycle, table format
-│   ├── graphs/ (amigos.pl, empresa.pl, movies.pl, p1.pl)
+│   ├── cy_engine.pl                          # Runtime: comparators, query cycle, updates, table format
+│   ├── graphs/ (amigos.pl, empresa.pl, movies.pl, p1.pl, revision.pl)
 │   └── tests/cy_engine_tests.pl
 └── src/
     ├── main/java/org/cyphail/

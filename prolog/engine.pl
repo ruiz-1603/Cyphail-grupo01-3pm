@@ -21,3 +21,4 @@
 :- ensure_loaded('graphs/empresa').
 :- ensure_loaded('graphs/movies').
 :- ensure_loaded('graphs/p1').
+:- ensure_loaded('graphs/revision').

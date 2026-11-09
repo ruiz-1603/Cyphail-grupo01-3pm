@@ -190,6 +190,66 @@ test_11 :-
     Rows = 'm.title\tyear\nThe Matrix\t1999',
     writeln('*** Test 11 OK ***'), nl.
 
+test_12 :-
+    writeln('*** Test 12: CREATE una vez por fila + resumen de cambios (CASO 7 P1) ***'),
+    set_current_graph(p1),
+    cy_reset_stats,
+    run_query(
+        cy_row(N),
+        (user_p1_node(P), user_p1_label(P, 'Person'),
+         user_p1_prop(P, age, A), cy_gt(A, 18),
+         cy_new_node(p1, C), cy_add_label(p1, C, 'Certificate'),
+         cy_set_prop(p1, C, year, 2026),
+         user_p1_prop(P, name, N)),
+        [name],
+        Rows
+    ),
+    writeln(Rows),
+    cy_stats(Stats),
+    writeln(Stats),
+    Stats = '4 node(s) created, 4 property(ies) set, 4 label(s) added',
+    aggregate_all(count, user_p1_label(_, 'Certificate'), 4),
+    writeln('*** Test 12 OK ***'), nl.
+
+test_13 :-
+    writeln('*** Test 13: DELETE de relacion, de nodo con relaciones y DETACH DELETE ***'),
+    set_current_graph(empresa),
+    cy_reset_stats,
+    cy_delete(empresa, k3),
+    \+ user_empresa_edge(k3, _, _, _),
+    \+ user_empresa_prop(k3, _, _),
+    user_empresa_node(p3),
+    catch(cy_delete(empresa, p2), Error, true),
+    format('Error esperado: ~w~n', [Error]),
+    atom(Error),
+    user_empresa_node(p2),
+    cy_detach_delete(empresa, p2),
+    \+ user_empresa_node(p2),
+    \+ user_empresa_edge(_, _, p2, _),
+    \+ user_empresa_edge(_, _, _, p2),
+    cy_stats(Stats),
+    writeln(Stats),
+    Stats = '7 relationship(s) deleted, 1 node(s) deleted',
+    set_current_graph(empresa),
+    writeln('*** Test 13 OK ***'), nl.
+
+test_14 :-
+    writeln('*** Test 14: SET reemplaza el valor y REMOVE quita propiedades y etiquetas (C11, C12 Guia P2) ***'),
+    set_current_graph(revision),
+    cy_reset_stats,
+    cy_set_prop(revision, a1, grade, 9.5),
+    findall(G, user_revision_prop(a1, grade, G), [9.5]),
+    cy_remove_prop(revision, x1, discount),
+    cy_remove_prop(revision, x1, promo),
+    cy_remove_label(revision, x1, 'Oferta'),
+    cy_remove_prop(revision, x1, no_existe),
+    \+ user_revision_label(x1, 'Oferta'),
+    user_revision_label(x1, 'Product'),
+    cy_stats(Stats),
+    writeln(Stats),
+    Stats = '1 property(ies) set, 2 property(ies) removed, 1 label(s) removed',
+    writeln('*** Test 14 OK ***'), nl.
+
 run_tests :-
     test_1,
     test_2,
@@ -201,4 +261,7 @@ run_tests :-
     test_8,
     test_9,
     test_10,
-    test_11.
+    test_11,
+    test_12,
+    test_13,
+    test_14.

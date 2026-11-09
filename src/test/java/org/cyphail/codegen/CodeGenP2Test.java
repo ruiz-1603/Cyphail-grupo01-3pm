@@ -184,13 +184,151 @@ class CodeGenP2Test {
                 "cy_gt(__P_edad, 25.5)"), CodeGen.generate(query, "empresa").body());
     }
 
-    // Alcance P2 (indicacion del profesor): SET y REMOVE se parsean pero no se transpilan
-    @Test
-    void setYRemoveNoSeTranspilanEnP2() {
-        var set = assertThrows(CodeGenException.class, () -> CodeGen.generate(setPrecio(), "g"));
-        assertEquals("SET is not supported in Sprint P2 (only MATCH, WHERE and RETURN)", set.getMessage());
+    // ------------------------------------------------------------ actualizaciones
 
-        var remove = assertThrows(CodeGenException.class, () -> CodeGen.generate(removeDescuento(), "g"));
-        assertEquals("REMOVE is not supported in Sprint P2 (only MATCH, WHERE and RETURN)", remove.getMessage());
+    // CASO 8: CREATE sin MATCH -> dos nodos nuevos y la relacion entre ellos
+    @Test
+    void createSinMatchCreaNodosYRelacion() {
+        var gen = CodeGen.generate(createSinMatch(), "empresa");
+
+        assertEquals("cy_row(__A, __R, __E)", gen.head());
+        assertEquals(List.of(
+                "cy_new_node(empresa, __A)",
+                "cy_add_label(empresa, __A, 'Persona')",
+                "cy_set_prop(empresa, __A, nombre, 'Marta')",
+                "cy_new_node(empresa, __E)",
+                "cy_add_label(empresa, __E, 'Empresa')",
+                "cy_set_prop(empresa, __E, nombre, 'UCR')",
+                "cy_new_edge(empresa, __R, 'TRABAJA_EN', __A, __E)",
+                "cy_set_prop(empresa, __R, rol, 'Dev')"), gen.body());
+        assertEquals(List.of("a", "r", "e"), gen.columns());
+    }
+
+    // CASO 7: CREATE (a)-[:ESCRIBIO]->(b) reutiliza a y b del MATCH (no crea nodos)
+    @Test
+    void createReutilizaVariablesDelMatch() {
+        var body = CodeGen.generate(matchCreate(), "g").body();
+
+        assertEquals("cy_new_edge(g, __E1, 'ESCRIBIO', __A, __B)", body.getLast());
+        assertTrue(body.stream().noneMatch(goal -> goal.startsWith("cy_new_node")));
+    }
+
+    // (a)<-[:T]-(b) en CREATE: el arco va de b hacia a
+    @Test
+    void createConDireccionInversa() {
+        var query = new Query(match(node("a"), node("b")), Optional.empty(),
+                List.of(new CreateClause(List.of(path(node("a"), anonymousRel(Direction.IN, "T"), node("b"))))),
+                Optional.empty());
+
+        assertEquals("cy_new_edge(g, __E1, 'T', __B, __A)", CodeGen.generate(query, "g").body().getLast());
+    }
+
+    @Test
+    void createExigeDireccionYUnTipo() {
+        var sinDireccion = new Query(match(node("a"), node("b")), Optional.empty(),
+                List.of(new CreateClause(List.of(path(node("a"), anonymousRel(Direction.NONE, "T"), node("b"))))),
+                Optional.empty());
+        assertEquals("A relationship in CREATE must have a direction (-> or <-)",
+                assertThrows(CodeGenException.class, () -> CodeGen.generate(sinDireccion, "g")).getMessage());
+
+        var sinTipo = new Query(match(node("a"), node("b")), Optional.empty(),
+                List.of(new CreateClause(List.of(path(node("a"), anonymousRel(Direction.OUT), node("b"))))),
+                Optional.empty());
+        assertEquals("A relationship in CREATE must have exactly one type",
+                assertThrows(CodeGenException.class, () -> CodeGen.generate(sinTipo, "g")).getMessage());
+    }
+
+    @Test
+    void createNoAgregaEtiquetasAVariableExistente() {
+        var query = new Query(match(node("a", "Persona")), Optional.empty(),
+                List.of(new CreateClause(List.of(node("a", "Empresa")))), Optional.empty());
+
+        var error = assertThrows(CodeGenException.class, () -> CodeGen.generate(query, "g"));
+        assertEquals("Variable 'a' is already declared: CREATE cannot add labels or properties to it (use SET)",
+                error.getMessage());
+    }
+
+    // CASO 9: DELETE r de una relacion despues del WHERE
+    @Test
+    void deleteDeRelacion() {
+        var body = CodeGen.generate(deleteRelacion(), "amigos").body();
+
+        assertEquals(List.of("user_amigos_prop(__R, since, __R_since)", "cy_lt(__R_since, 2000)", "cy_delete(amigos, __R)"),
+                body.subList(body.size() - 3, body.size()));
+    }
+
+    // SET r.grade = 9.5 ... RETURN r.grade: el RETURN vuelve a leer la propiedad (valor nuevo)
+    @Test
+    void setYLuegoReturnLeeElValorNuevo() {
+        var gen = CodeGen.generate(setNota(), "revision");
+
+        assertEquals("cy_row(__U_id, __R_grade)", gen.head());
+        assertEquals(List.of(
+                "cy_set_prop(revision, __R, grade, 9.5)",
+                "user_revision_prop(__R, grade, __R_grade)"),
+                gen.body().subList(gen.body().size() - 2, gen.body().size()));
+    }
+
+    // Si la propiedad ya se habia pedido antes del SET, despues se pide con otro nombre
+    @Test
+    void setOlvidaElCalculoAnterior() {
+        var query = new Query(match(node("p", "Persona")),
+                where(cmp(BinaryOp.GT, prop("p", "edad"), num(30))),
+                List.of(new SetClause(List.of(new SetProperty(prop("p", "edad"), num(31))))),
+                returning(item(prop("p", "edad"))));
+
+        var gen = CodeGen.generate(query, "empresa");
+
+        assertEquals("cy_row(__P_edad_2)", gen.head());
+        assertTrue(gen.body().contains("cy_set_prop(empresa, __P, edad, 31)"));
+        assertEquals("user_empresa_prop(__P, edad, __P_edad_2)", gen.body().getLast());
+    }
+
+    @Test
+    void setDeEtiquetas() {
+        var query = new Query(match(node("p", "Product")), Optional.empty(),
+                List.of(new SetClause(List.of(new SetLabels("p", List.of("Oferta", "Nuevo"))))), Optional.empty());
+
+        var body = CodeGen.generate(query, "g").body();
+
+        assertEquals(List.of("cy_add_label(g, __P, 'Oferta')", "cy_add_label(g, __P, 'Nuevo')"),
+                body.subList(body.size() - 2, body.size()));
+    }
+
+    // CASO 12 (Guia P2): REMOVE de propiedades y de una etiqueta
+    @Test
+    void removeDePropiedadesYEtiqueta() {
+        var query = new Query(
+                match(node("p", List.of("Product"), entry("code", new StringLit("PROD-99")))),
+                Optional.empty(),
+                List.of(new RemoveClause(List.of(
+                        new RemoveProperty(prop("p", "discount")),
+                        new RemoveProperty(prop("p", "promo")),
+                        new RemoveLabels("p", List.of("Oferta"))))),
+                returning(item(prop("p", "id"))));
+
+        var gen = CodeGen.generate(query, "revision");
+
+        assertEquals(List.of(
+                "cy_remove_prop(revision, __P, discount)",
+                "cy_remove_prop(revision, __P, promo)",
+                "cy_remove_label(revision, __P, 'Oferta')",
+                "user_revision_prop(__P, id, __P_id)"),
+                gen.body().subList(gen.body().size() - 4, gen.body().size()));
+        assertTrue(gen.updates());
+    }
+
+    // REMOVE p.discount RETURN p.id: el REMOVE va antes de los goals del RETURN
+    @Test
+    void removeAntesDelReturn() {
+        var gen = CodeGen.generate(removeDescuento(), "g");
+        assertEquals("cy_remove_prop(g, __P, discount)", gen.body().get(gen.body().size() - 2));
+    }
+
+    @Test
+    void consultaDeLecturaNoCuentaCambios() {
+        var gen = CodeGen.generate(trabajaEn(), "empresa");
+        assertFalse(gen.updates());
+        assertFalse(gen.goal().contains("cy_stats"));
     }
 }

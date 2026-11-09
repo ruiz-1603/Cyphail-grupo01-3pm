@@ -27,8 +27,10 @@ import static org.cyphail.codegen.PrologSyntax.graphPredicate;
  * CodeGen: transpila un AST Cyphail a goals de Prolog para prolog/cy_engine.pl.
  *
  * Es un visitor del AST escrito como en AstPrinter: un metodo por tipo de nodo
- * y switch con pattern matching sobre las interfaces sealed (Expr, UpdateClause).
- * Alcance P2 (indicacion del profesor): solo MATCH (nodos y relaciones), WHERE (AND/OR/NOT) y RETURN.
+ * y switch con pattern matching sobre las interfaces sealed (Expr, UpdateClause, SetItem, RemoveItem).
+ * Orden de los goals: MATCH (nodos y relaciones), WHERE (AND/OR/NOT), actualizaciones
+ * (CREATE, SET, REMOVE, DELETE, en el orden del query) y al final RETURN. Como Prolog
+ * recorre todas las soluciones, cada actualizacion se aplica una vez por fila del MATCH.
  * El estado (tabla de simbolos + goals emitidos) es inmutable y pasa de un
  * metodo al siguiente: cada metodo recibe un State y devuelve uno nuevo.
  *
@@ -75,6 +77,19 @@ public final class CodeGen {
         String graphCall(String suffix, String... args) {
             return call(graphPredicate(graph, suffix), args);
         }
+
+        // Llamada a una actualizacion del engine, con el grafo como primer argumento: cy_set_prop(G, ...)
+        String updateCall(String predicate, String... args) {
+            var all = new ArrayList<String>();
+            all.add(atom(graph));
+            all.addAll(List.of(args));
+            return call(predicate, all.toArray(String[]::new));
+        }
+
+        // Despues de cambiar variable.property el calculo anterior ya no sirve
+        State forget(String variable, String property) {
+            return withSymbols(symbols.withoutProperty(variable, property));
+        }
     }
 
     // Termino Prolog que representa un valor, junto con el estado que dejo al calcularlo
@@ -89,23 +104,34 @@ public final class CodeGen {
 
     /** Transpila el query para el grafo activo (el de .use). */
     public static GeneratedQuery generate(Query query, String graph) {
-        rejectUpdates(query.updates());
-        var matchClause = query.match()
-                .orElseThrow(() -> new CodeGenException("A query without MATCH is not supported yet"));
-        var items = query.returnClause()
-                .orElseThrow(() -> new CodeGenException("A query without RETURN is not supported yet"))
-                .projection().items();
+        var hasUpdates = !query.updates().isEmpty();
+        // Sin MATCH solo tiene sentido un query que crea (CREATE ... RETURN ...)
+        if (query.match().isEmpty() && !hasUpdates) {
+            throw new CodeGenException("A query without MATCH is not supported yet");
+        }
+        // Sin RETURN solo tiene sentido un query que cambia el grafo
+        if (query.returnClause().isEmpty() && !hasUpdates) {
+            throw new CodeGenException("A query without RETURN is not supported yet");
+        }
+        var items = query.returnClause().map(r -> r.projection().items()).orElse(List.of());
 
         var start = new State(graph, SymbolTable.empty(), List.of());
-        var matched = match(start, matchClause);
+        var matched = query.match().map(m -> match(start, m)).orElse(start);
         var filtered = where(matched, query.where());
-        var head = projection(filtered, items);
+        var updated = updates(filtered, query.updates());
+        var head = projection(updated, items);
 
         return new GeneratedQuery(
-                call(ROW_FUNCTOR, head.texts().toArray(String[]::new)),
+                head(head.texts()),
                 head.state().goals(),
                 columns(items),
-                head.state().symbols());
+                head.state().symbols(),
+                hasUpdates);
+    }
+
+    // cy_row(V1, ..., Vn); sin RETURN no hay columnas y la cabeza es solo el atomo cy_row
+    private static String head(List<String> values) {
+        return values.isEmpty() ? ROW_FUNCTOR : call(ROW_FUNCTOR, values.toArray(String[]::new));
     }
 
 
@@ -307,18 +333,141 @@ public final class CodeGen {
     }
 
 
-    // Por indicacion del profesor, P2 solo ejecuta MATCH, WHERE y RETURN: las clausulas
-    // de actualizacion se parsean y se ven con .tree, pero no se transpilan
-    private static void rejectUpdates(List<UpdateClause> updates) {
-        updates.stream().findFirst().ifPresent(update -> {
-            var clause = switch (update) {
-                case CreateClause _ -> "CREATE";
-                case SetClause _ -> "SET";
-                case RemoveClause _ -> "REMOVE";
-                case DeleteClause _ -> "DELETE";
+    // updates := (create | set | remove | delete)*
+    // Cada clausula emite goals con efecto en el engine (cy_new_node, cy_set_prop, ...),
+    // en el orden en que aparecen en el query
+    private static State updates(State state, List<UpdateClause> updates) {
+        var current = state;
+        for (UpdateClause update : updates) {
+            current = switch (update) {
+                case CreateClause(var patterns) -> create(current, patterns);
+                case SetClause(List<SetItem> items) -> set(current, items);
+                case RemoveClause(List<RemoveItem> items) -> remove(current, items);
+                case DeleteClause(boolean detach, List<String> variables) -> delete(current, detach, variables);
             };
-            throw new CodeGenException(clause + " is not supported in Sprint P2 (only MATCH, WHERE and RETURN)");
-        });
+        }
+        return current;
+    }
+
+    // create := "CREATE" pattern ("," pattern)*
+    private static State create(State state, List<? extends PatternElement> patterns) {
+        var current = state;
+        for (PatternElement element : patterns) {
+            current = switch (element) {
+                case PatternNode node -> createNode(current, node).state();
+                case PathPattern path -> createPath(current, path);
+            };
+        }
+        return current;
+    }
+
+    // Nodo del CREATE. Si la variable ya existe (MATCH o CREATE anterior) se reutiliza tal cual,
+    // como (a) y (b) en CREATE (a)-[:CONOCE]->(b). Si no: cy_new_node, sus etiquetas y sus propiedades.
+    private static Element createNode(State state, PatternNode node) {
+        var bound = node.variable().flatMap(name -> state.symbols().variable(name));
+        if (bound.isPresent()) {
+            if (!node.labels().isEmpty() || !node.properties().isEmpty()) {
+                throw new CodeGenException("Variable '" + node.variable().get()
+                        + "' is already declared: CREATE cannot add labels or properties to it (use SET)");
+            }
+            return new Element(state, bound.get());
+        }
+        var declared = declare(state, node.variable(), "N");
+        var id = declared.id();
+        var created = declared.state().emit(declared.state().updateCall("cy_new_node", id));
+        return new Element(setProperties(addLabels(created, id, node.labels()), id, node.properties()), id);
+    }
+
+    // (a)-[r:T {k: v}]->(b) del CREATE: primero los nodos (nuevos o ya existentes) y luego el arco.
+    // Como en Cypher, la relacion debe tener exactamente un tipo y una direccion.
+    private static State createPath(State state, PathPattern path) {
+        var relationship = path.relationship();
+        if (relationship.types().size() != 1) {
+            throw new CodeGenException("A relationship in CREATE must have exactly one type");
+        }
+        relationship.variable()
+                .filter(name -> state.symbols().variable(name).isPresent())
+                .ifPresent(name -> {
+                    throw new CodeGenException("Relationship variable '" + name + "' is already declared");
+                });
+
+        var left = createNode(state, path.left());
+        var right = createNode(left.state(), path.right());
+        var forward = switch (relationship.direction()) {
+            case OUT -> true;
+            case IN -> false;
+            case NONE -> throw new CodeGenException("A relationship in CREATE must have a direction (-> or <-)");
+        };
+        var from = forward ? left.id() : right.id();
+        var to = forward ? right.id() : left.id();
+
+        var declared = declare(right.state(), relationship.variable(), "E");
+        var id = declared.id();
+        var type = atom(relationship.types().getFirst());
+        var created = declared.state().emit(declared.state().updateCall("cy_new_edge", id, type, from, to));
+        return setProperties(created, id, relationship.properties());
+    }
+
+    private static State addLabels(State state, String id, List<String> labels) {
+        return state.emitAll(labels.stream()
+                .map(label -> state.updateCall("cy_add_label", id, atom(label)))
+                .toList());
+    }
+
+    // {k: v} de un elemento creado: se calcula el valor (puede ser o.id) y se guarda con cy_set_prop
+    private static State setProperties(State state, String id, List<PropertyEntry> entries) {
+        var current = state;
+        for (PropertyEntry entry : entries) {
+            var value = term(current, entry.value());
+            current = value.state().emit(value.state().updateCall("cy_set_prop", id, atom(entry.key()), value.text()));
+        }
+        return current;
+    }
+
+    // set := "SET" item ("," item)*     item := x.k "=" expr | x:L1:L2
+    private static State set(State state, List<SetItem> items) {
+        var current = state;
+        for (SetItem item : items) {
+            current = switch (item) {
+                case SetProperty(PropertyAccess(String variable, String property), Expr value) -> {
+                    var t = term(current, value);
+                    var id = t.state().id(variable);
+                    yield t.state().emit(t.state().updateCall("cy_set_prop", id, atom(property), t.text()))
+                            .forget(variable, property);
+                }
+                case SetLabels(String variable, List<String> labels) -> addLabels(current, current.id(variable), labels);
+            };
+        }
+        return current;
+    }
+
+    // remove := "REMOVE" item ("," item)*     item := x.k | x:L1:L2
+    private static State remove(State state, List<RemoveItem> items) {
+        var current = state;
+        for (RemoveItem item : items) {
+            current = switch (item) {
+                case RemoveProperty(PropertyAccess(String variable, String property)) ->
+                        current.emit(current.updateCall("cy_remove_prop", current.id(variable), atom(property)))
+                                .forget(variable, property);
+                case RemoveLabels(String variable, List<String> labels) -> {
+                    var id = current.id(variable);
+                    var base = current;
+                    yield current.emitAll(labels.stream()
+                            .map(label -> base.updateCall("cy_remove_label", id, atom(label)))
+                            .toList());
+                }
+            };
+        }
+        return current;
+    }
+
+    // delete := ["DETACH"] "DELETE" var ("," var)*
+    // El engine decide si es nodo o relacion; un nodo con relaciones solo se borra con DETACH
+    private static State delete(State state, boolean detach, List<String> variables) {
+        var predicate = detach ? "cy_detach_delete" : "cy_delete";
+        return state.emitAll(variables.stream()
+                .map(variable -> state.updateCall(predicate, state.id(variable)))
+                .toList());
     }
 
 

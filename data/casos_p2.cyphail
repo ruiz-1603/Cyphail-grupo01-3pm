@@ -3,8 +3,10 @@
 //          Daniel Villarroel Abaduca, Nicolas Zarate Hernandez
 // Casos de referencia Sprint P2 (EIF400-II-2026-Cypahil-P2-10-Casos_Prueba_Unitarios.md)
 // Uso desde el repl:  .load "data/casos_p2.cyphail"
-// Los casos 7, 8, 9, 11 y 12 (CREATE / DELETE / SET / REMOVE) se ven con .tree pero no se ejecutan
-// (alcance P2 indicado en clase: MATCH, WHERE, RETURN). Numeracion de la Guia de Revision P2 (C0 a C12).
+// Numeracion de la Guia de Revision P2 (C0 a C12). Todos los casos se ejecutan.
+// Los casos 7, 8, 9, 11 y 12 cambian el grafo (CREATE / DELETE / SET / REMOVE): despues de cada uno
+// hay un MATCH que muestra el cambio y un .use que vuelve a cargar el grafo desde su archivo,
+// asi los casos siguientes siempre ven los mismos datos.
 .use empresa;
 
 // CASO 1: -[var]-> sin tipo, RETURN de la relacion (su id)
@@ -37,18 +39,34 @@ MATCH (p:Persona)-[t:TRABAJA_EN {cargo: 'Dev'}]->(e:Empresa)
 WHERE t.desde >= 2018 OR NOT e.pais = 'CR'
 RETURN p.nombre, e.nombre, t.cargo, t.desde;
 
-// CASO 7: MATCH + CREATE (solo arbol)
-.tree MATCH (a:Persona {nombre: 'Ana'}), (b:Persona {nombre: 'Luis'})
+// CASO 7: MATCH de dos nodos + CREATE de una relacion entre ellos (reutiliza a y b, no crea nodos)
+// Ajustado al grafo empresa (Guia P2: "su caso se ajusta al grafo disponible"): Ana y Luis no estan, Marta y Pedro si
+MATCH (a:Persona {nombre: 'Marta'}), (b:Persona {nombre: 'Pedro'})
 CREATE (a)-[:CONOCE {desde: 2020, nivel: 'amigo'}]->(b);
 
-// CASO 8: CREATE sin MATCH (solo arbol)
-.tree CREATE (a:Persona {nombre: 'Marta'})-[r:TRABAJA_EN {cargo: 'Dev', activo: true}]->(e:Empresa {nombre: 'Acme'})
+MATCH (a:Persona)-[r:CONOCE]->(b:Persona {nombre: 'Pedro'})
+RETURN a.nombre, b.nombre, r.desde, r.nivel;
+
+.use empresa;
+
+// CASO 8: CREATE sin MATCH, crea dos nodos y la relacion; RETURN de los ids nuevos
+CREATE (a:Persona {nombre: 'Marta'})-[r:TRABAJA_EN {cargo: 'Dev', activo: true}]->(e:Empresa {nombre: 'Acme'})
 RETURN a, r, e;
 
-// CASO 9: DELETE de una relacion (solo arbol)
-.tree MATCH (a:Persona)-[r:CONOCE]->(b:Persona)
+MATCH (p:Persona)-[t:TRABAJA_EN {activo: true}]->(e:Empresa)
+RETURN p.nombre, t.cargo, e.nombre;
+
+.use empresa;
+
+// CASO 9: DELETE de una relacion con WHERE (Lucia CONOCE Marta desde 1998); los nodos no cambian
+MATCH (a:Persona)-[r:CONOCE]->(b:Persona)
 WHERE r.desde < 2000
 DELETE r;
+
+MATCH (a:Persona)-[r:CONOCE]->(b:Persona)
+RETURN a.nombre, b.nombre, r.desde;
+
+.use empresa;
 
 // CASO 10: integrador
 MATCH (p:Persona {activo: true})-[t:TRABAJA_EN {cargo: 'Dev'}]->(e:Empresa),
@@ -67,12 +85,27 @@ RETURN p.nombre, c.nombre, e.nombre;
 MATCH (a)-[r]->(b), (c)-[s]->(d)
 RETURN r, s;
 
-// CASO 11 (Guia P2): SET multiple (solo arbol)
-.tree MATCH (u:Student {id: "4-666-000"})-[r:attends]->(c:Course {nrc: "50691"})
+// CASOS 11 y 12 (Guia P2): usan el grafo revision (Student, Course, Product)
+.use revision;
+
+// CASO 11 (Guia P2): SET multiple sobre la relacion y los dos nodos
+MATCH (u:Student {id: "4-666-000"})-[r:attends]->(c:Course {nrc: "50691"})
 SET r.grade = 9.5, u.activo = true, c.cupo = 30
 RETURN u.id, r.grade;
 
-// CASO 12 (Guia P2): REMOVE multiple (solo arbol)
-.tree MATCH (p:Product {code: "PROD-99"})
+MATCH (u:Student {id: "4-666-000"})-[r:attends]->(c:Course)
+RETURN u.activo, r.grade, c.nrc, c.cupo;
+
+// CASO 12 (Guia P2): REMOVE multiple, dos propiedades y una etiqueta
+MATCH (p:Product {code: "PROD-99"})
 REMOVE p.discount, p.promo, p:Oferta
 RETURN p.id;
+
+// Ya no hay productos con la etiqueta Oferta (0 filas); PROD-99 conserva su nombre
+MATCH (p:Product:Oferta)
+RETURN p.id;
+
+MATCH (p:Product {code: "PROD-99"})
+RETURN p.id, p.name;
+
+.use revision;
