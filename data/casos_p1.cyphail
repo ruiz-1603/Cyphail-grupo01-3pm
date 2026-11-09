@@ -1,4 +1,6 @@
 // Proyecto Cyphail - Grupo 01-3pm
+// Autores: Priscilla Murillo Romero, Aaron Ruiz Medina, Samael Sanchez Mora,
+//          Daniel Villarroel Abaduca, Nicolas Zarate Hernandez
 // Casos de prueba del Sprint P1 (EIF400-II-2026-SPEC-Sprint-P1-Casos de Prueba-CLoria.md)
 // "Todo P1 debe funcionar" (Guia de Revision P2). Uso desde el repl:  .load "data/casos_p1.cyphail"
 // Grafo p1 = los datos de los JSON de P1 (prolog/graphs/p1.pl).
